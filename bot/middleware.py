@@ -1,4 +1,5 @@
-"""Регистрация пользователя, бан, техработы, обязательная подписка, антифлуд."""
+"""Регистрация пользователя, рефералы, UTM, язык, бан, техработы, обязательная подписка, антифлуд."""
+import re
 import time
 
 from aiogram import BaseMiddleware
@@ -10,6 +11,7 @@ from .render import base_ctx, show, sys_btn
 
 FLOOD_DELAY = 0.4
 SUB_CACHE_TTL = 120
+SOURCE_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 
 class UserMiddleware(BaseMiddleware):
@@ -23,30 +25,23 @@ class UserMiddleware(BaseMiddleware):
             return
         if isinstance(event, Message) and event.chat.type != "private":
             return
-        is_admin = tg.id in ADMIN_IDS
-        data["is_admin"] = is_admin
+        role = await db.admin_role(tg.id, ADMIN_IDS)
+        data["role"] = role
 
         now = time.monotonic()
-        if not is_admin and now - self.last.get(tg.id, 0) < FLOOD_DELAY:
+        if not role and now - self.last.get(tg.id, 0) < FLOOD_DELAY:
             if isinstance(event, CallbackQuery):
                 await event.answer()
             return
         self.last[tg.id] = now
 
         user, is_new = await db.upsert_user(tg.id, tg.username, tg.first_name)
-        if is_new and isinstance(event, Message) and (event.text or "").startswith("/start r"):
-            ref = event.text.split(maxsplit=1)[1][1:]
-            if ref.isdigit() and int(ref) != tg.id and await db.user(int(ref)):
-                await db.run("UPDATE users SET ref_id=? WHERE id=?", int(ref), tg.id)
-                user["ref_id"] = int(ref)
+        if is_new:
+            await self._on_new_user(event, tg, user)
         data["user"] = user
 
-        if not is_admin:
-            block = None
-            if user["banned"]:
-                block = "banned"
-            elif await db.get_bool("maintenance"):
-                block = "maintenance"
+        if not role:
+            block = "banned" if user["banned"] else "maintenance" if await db.get_bool("maintenance") else None
             if block:
                 if isinstance(event, CallbackQuery):
                     await event.answer()
@@ -55,6 +50,22 @@ class UserMiddleware(BaseMiddleware):
             if not await self._check_sub(event, user):
                 return
         return await handler(event, data)
+
+    async def _on_new_user(self, event, tg, user: dict):
+        langs = await db.languages()
+        code = (tg.language_code or "")[:2]
+        lang = code if code in langs else langs[0]
+        ref_id, source = None, None
+        if isinstance(event, Message) and (event.text or "").startswith("/start "):
+            payload = event.text.split(maxsplit=1)[1].strip()
+            if payload.startswith("r") and payload[1:].isdigit():
+                ref = int(payload[1:])
+                if ref != tg.id and await db.user(ref):
+                    ref_id = ref
+            elif not payload.startswith(("buy", "gift")) and SOURCE_RE.match(payload):
+                source = payload  # UTM-метка: t.me/bot?start=<source>
+        await db.run("UPDATE users SET lang=?, ref_id=?, source=? WHERE id=?", lang, ref_id, source, tg.id)
+        user.update(lang=lang, ref_id=ref_id, source=source)
 
     async def _check_sub(self, event, user) -> bool:
         channel = await db.get("required_channel")
@@ -80,4 +91,3 @@ class UserMiddleware(BaseMiddleware):
             await event.answer()
         await show(event, "subscribe", ctx, top=rows)
         return False
-

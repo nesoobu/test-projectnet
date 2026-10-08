@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Stars Shop</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --bg2: var(--tg-theme-secondary-bg-color, #f2f2f7);
+    --text: var(--tg-theme-text-color, #111111);
+    --hint: var(--tg-theme-hint-color, #8e8e93);
+    --accent: var(--tg-theme-button-color, #2481cc);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text);
+         font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  .hint { color: var(--hint); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 16px 0; }
+  .pkg { background: var(--bg2); border: 2px solid transparent; border-radius: 14px; padding: 12px;
+         cursor: pointer; text-align: left; color: var(--text); font: inherit; }
+  .pkg b { display: block; font-size: 18px; }
+  .pkg.active { border-color: var(--accent); }
+  .card { background: var(--bg2); border-radius: 14px; padding: 14px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .num { width: 110px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--hint);
+         background: var(--bg); color: var(--text); font: inherit; text-align: right; }
+  .total { font-size: 28px; font-weight: 700; margin-top: 10px; }
+  .buttons { display: flex; gap: 8px; margin-top: 16px; }
+  button.main { flex: 1; padding: 14px; border: 0; border-radius: 12px; font: 600 15px/1 inherit;
+                background: var(--accent); color: var(--accent-text); cursor: pointer; }
+  button.main.ghost { background: var(--bg2); color: var(--text); }
+</style>
+</head>
+<body>
+  <h1 id="title">⭐️ Telegram Stars</h1>
+  <div class="hint" id="subtitle"></div>
+  <div class="grid" id="packages"></div>
+  <div class="card">
+    <div class="row"><span id="customLabel"></span><input class="num" id="num" type="number" inputmode="numeric"></div>
+    <input type="range" id="range">
+    <div class="row"><span class="hint" id="toPay"></span><span class="total" id="total"></span></div>
+  </div>
+  <div class="buttons">
+    <button class="main" id="buy"></button>
+    <button class="main ghost" id="gift"></button>
+  </div>
+<script>
+  const tg = window.Telegram?.WebApp;
+  tg?.ready(); tg?.expand();
+  const q = new URLSearchParams(location.search);
+  const bot = q.get("bot") || "";
+  const rate = parseFloat(q.get("rate") || "1.5");
+  const cur = q.get("cur") || "₽";
+  const min = parseInt(q.get("min") || "50"), max = parseInt(q.get("max") || "100000");
+  const en = (q.get("lang") || "ru") === "en";
+  const pk = (q.get("pk") || "").split(",").filter(Boolean).map(s => s.split(":")).map(([s, p]) => [+s, +p]);
+  const T = en
+    ? {sub: `1 ⭐️ = ${rate} ${cur} · no App Store fees`, custom: "Custom amount", pay: "To pay", buy: "Buy", gift: "🎁 Gift"}
+    : {sub: `1 ⭐️ = ${rate} ${cur} · без комиссий App Store`, custom: "Своё количество", pay: "К оплате", buy: "Купить", gift: "🎁 Подарить"};
+  const $ = id => document.getElementById(id);
+  $("subtitle").textContent = T.sub; $("customLabel").textContent = T.custom; $("toPay").textContent = T.pay;
+  $("gift").textContent = T.gift;
+  const range = $("range"), num = $("num");
+  range.min = num.min = min; range.max = Math.min(max, 10000); num.max = max; range.step = 50;
+  let stars = pk.length ? pk[Math.min(1, pk.length - 1)][0] : min;
+
+  const priceOf = n => { const p = pk.find(([s]) => s === n); return p ? p[1] : Math.round(n * rate * 100) / 100; };
+  const fmt = x => x.toLocaleString(en ? "en-US" : "ru-RU", {maximumFractionDigits: 2});
+
+  function render() {
+    num.value = stars; range.value = Math.min(stars, +range.max);
+    $("total").textContent = `${fmt(priceOf(stars))} ${cur}`;
+    $("buy").textContent = `${T.buy} ${fmt(stars)} ⭐️`;
+    document.querySelectorAll(".pkg").forEach(el => el.classList.toggle("active", +el.dataset.s === stars));
+    const ok = stars >= min && stars <= max;
+    $("buy").disabled = $("gift").disabled = !ok;
+    $("buy").style.opacity = ok ? 1 : .5;
+  }
+  pk.forEach(([s, p]) => {
+    const b = document.createElement("button");
+    b.className = "pkg"; b.dataset.s = s;
+    b.innerHTML = `<b>${fmt(s)} ⭐️</b><span class="hint">${fmt(p)} ${cur}</span>`;
+    b.onclick = () => { stars = s; tg?.HapticFeedback?.selectionChanged(); render(); };
+    $("packages").appendChild(b);
+  });
+  range.oninput = () => { stars = +range.value; render(); };
+  num.oninput = () => { stars = parseInt(num.value || "0"); render(); };
+
+  // Открываем бота с диплинком: бот спросит получателя и оформит заказ
+  const go = kind => {
+    const link = `https://t.me/${bot}?start=${kind}${stars}`;
+    if (tg) { tg.openTelegramLink(link); tg.close(); } else location.href = link;
+  };
+  $("buy").onclick = () => go("buy");
+  $("gift").onclick = () => go("gift");
+  render();
+</script>
+</body>
+</html>

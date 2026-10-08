@@ -7,3 +7,13 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x}
 DB_PATH = os.getenv("DB_PATH", "data/bot.db")
+
+# Необязательно: Redis для FSM (переживает перезапуск, нужен при нескольких инстансах)
+REDIS_URL = os.getenv("REDIS_URL", "")
+
+# Необязательно: webhook вместо polling
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")  # https://example.com
+WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/tg")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+WEBAPP_HOST = os.getenv("WEBAPP_HOST", "0.0.0.0")
+WEBAPP_PORT = int(os.getenv("WEBAPP_PORT", "8080"))

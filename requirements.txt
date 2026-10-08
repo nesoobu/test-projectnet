@@ -1,3 +1,5 @@
 aiogram==3.31.0
 aiosqlite>=0.20
 python-dotenv>=1.0
+# по желанию, для REDIS_URL:
+# redis>=5.0
