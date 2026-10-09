@@ -1,4 +1,4 @@
-import { GI, modeName, S, api, html, mount, on, icon, avatar, nameEl, ago, hhmm, pushScreen, leraSays, fail, haptic, emit, sheet, confirmSheet, toast } from "../core.js";
+import { rt, GI, modeName, S, api, html, mount, on, icon, avatar, nameEl, ago, hhmm, pushScreen, leraSays, fail, haptic, emit, sheet, confirmSheet, toast } from "../core.js";
 import { openPerson, reportSheet } from "./person.js";
 
 export function render(root) {
@@ -12,11 +12,13 @@ export function render(root) {
     const fresh = data.matches.filter((m) => !m.last_text);
     const convo = data.matches.filter((m) => m.last_text);
     if (!data.matches.length && !data.squads.length && !S.me.clan) {
-      return mount(list, html`<div class="empty"><h2 class="h2">тишина<span class="dot">.</span></h2>
+      return mount(list, html`<div class="pad"><button class="friends-row" data-act="friends">${icon("user")}<span class="grow">Друзья</span>${icon("send", 'width="16" height="16"')}</button></div>
+        <div class="empty"><h2 class="h2">тишина<span class="dot">.</span></h2>
         ${leraSays("Здесь появятся чаты, когда случится мэтч в дуэте или ты вступишь в отряд.")}
         <button class="btn" data-act="duet">${icon("duet")}к анкетам</button></div>`);
     }
     mount(list, html`
+      <div class="pad" style="margin-bottom:12px"><button class="friends-row" data-act="friends">${icon("user")}<span class="grow">Друзья</span>${icon("send", 'width="16" height="16"')}</button></div>
       ${fresh.length ? html`<div class="pad kicker" style="margin-bottom:12px">новые мэтчи · <b>${fresh.length}</b></div>
         <div class="new-matches">${fresh.map((m) => html`<button data-act="match" data-id="${m.id}">${avatar(m.with, 64, { online: true })}<span class="ell" style="max-width:68px">${m.with?.name}</span></button>`)}</div>` : ""}
       ${convo.length ? html`<div class="pad"><div class="kicker" style="margin:4px 0 4px">сообщения</div><div class="list">${convo.map((m) => html`
@@ -41,6 +43,7 @@ export function render(root) {
 
   const off = on(root, {
     match: (b) => openMatch(+b.dataset.id, load),
+    friends: async () => (await import("./friends.js")).openFriends(),
     clan: async () => { const { openClan } = await import("./clans.js"); openClan(S.me.clan.id, load); },
     squad: async (b) => { const { openSquad } = await import("./squads.js"); openSquad(+b.dataset.id, load); },
     duet: async () => { const { go } = await import("../app.js"); go("duet"); },
@@ -65,6 +68,7 @@ export function openMatch(id, onClose) {
       empty: () => leraSays(`Вы с ${other?.name || "игроком"} лайкнули друг друга. Ледокол ниже — если не знаешь, с чего начать.`),
       ice: true,
       back: pop,
+      key: `m${id}`,
       actions: {
         who: () => other && openPerson(other),
         menu: () => sheet((s, close) => {
@@ -91,10 +95,23 @@ async function refreshUnread() {
 }
 
 // Универсальная комната чата: личка и отряд
-export function chatRoom(el, { head, load, send, empty, back, ice = false, group = false, actions = {}, poll = 3000 }) {
-  let last = 0, msgs = [], otherRead = 0, alive = true, timer;
+export function chatRoom(el, { head, load, send, empty, back, key = null, ice = false, group = false, actions = {}, poll = 3000 }) {
+  let last = 0, msgs = [], otherRead = 0, alive = true, timer, typingTimer = null;
+  // по WebSocket новые сообщения приходят мгновенно; опрос остаётся страховкой и становится редким
+  const offMsg = key ? rt.on("msg", (ev) => { if (ev.chat === key) { clearTimeout(timer); tick(); } }) : () => {};
+  const offTyping = key ? rt.on("typing", (ev) => {
+    if (ev.chat !== key) return;
+    const t = el.querySelector("#typing");
+    if (!t) return;
+    t.textContent = group ? `${ev.name} печатает…` : "печатает…";
+    t.classList.add("on");
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(() => t.classList.remove("on"), 3500);
+  }) : () => {};
+  if (key) el.dataset.chat = key;
   mount(el, html`<div class="chat-head"><button class="ibtn" data-act="back" style="background:none;margin-left:-10px">${icon("back")}</button><div class="row grow" id="hd"></div></div>
     <div class="msgs" id="msgs"><div class="spinner"></div></div>
+    <div class="typing-line" id="typing"></div>
     ${ice ? html`<div class="ice" id="ice"></div>` : ""}
     <div class="composer"><textarea id="ta" rows="1" placeholder="Сообщение…" maxlength="1000"></textarea>
       <button class="ibtn send" data-act="send">${icon("send")}</button></div>`);
@@ -133,7 +150,7 @@ export function chatRoom(el, { head, load, send, empty, back, ice = false, group
       otherRead = r.otherRead ?? otherRead;
       if (changed) draw();
     } catch (e) { if (first) { fail(e); mount(box, html`<div class="empty">${leraSays(e.message)}</div>`); } }
-    if (alive) timer = setTimeout(tick, document.hidden ? poll * 3 : poll);
+    if (alive) timer = setTimeout(tick, document.hidden ? poll * 3 : rt.connected && key ? Math.max(poll, 15000) : poll);
   }
 
   async function doSend(text) {
@@ -147,9 +164,12 @@ export function chatRoom(el, { head, load, send, empty, back, ice = false, group
     } catch (e) { fail(e); ta.value = text; }
   }
 
-  ta.addEventListener("input", () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px"; });
+  ta.addEventListener("input", () => {
+    ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 120) + "px";
+    if (key && ta.value) rt.send({ type: "typing", chat: key });
+  });
   ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && matchMedia("(pointer:fine)").matches) { e.preventDefault(); doSend(ta.value); } });
   const off = on(el, { send: () => doSend(ta.value), ice: (b) => doSend(b.textContent), back: () => back?.(), ...actions });
   tick(true);
-  return () => { alive = false; clearTimeout(timer); off(); };
+  return () => { alive = false; clearTimeout(timer); off(); offMsg(); offTyping(); };
 }

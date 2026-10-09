@@ -70,6 +70,7 @@ export function render(root) {
         <button class="tile" data-act="ach">${icon("medal")}<div><b>Ачивки</b><div class="sub">награды за достижения</div></div></button>
         <button class="tile wide" data-act="pass">${icon("crown")}<div class="grow"><b>Боевой пропуск</b><div class="sub">30 уровней наград за сезон</div></div>${icon("send")}</button>
         <button class="tile" data-act="clan">${icon("squad")}<div><b>${m.clan ? `Клан [${m.clan.tag}]` : "Кланы"}</b><div class="sub">${m.clan ? "мой клан" : "вступи или создай"}</div></div></button>
+        <button class="tile" data-act="friends">${icon("user")}<div><b>Друзья</b><div class="sub">список, заявки, подарки</div></div></button>
         <button class="tile" data-act="promo">${icon("gift")}<div><b>Промокод</b><div class="sub">ввести код</div></div></button>
         <button class="tile" data-act="gacha">${icon("sparkle")}<div><b>Гача</b><div class="sub">гарант через ${Math.max(0, 50 - m.pity)}</div></div></button>
         <button class="tile" data-act="shop">${icon("bag")}<div><b>Магазин</b><div class="sub">рамки, ники, титулы</div></div></button>
@@ -95,6 +96,7 @@ export function render(root) {
     game: (b) => editGame(b.dataset.g),
     ach: () => more.openAchievements(),
     pass: () => more.openPass(),
+    friends: async () => (await import("./friends.js")).openFriends(),
     clan: async () => {
       if (S.me.clan) { const { openClan } = await import("./clans.js"); return openClan(S.me.clan.id); }
       const { go } = await import("../app.js"); go("mates", "clans");

@@ -263,6 +263,7 @@ const P = {
   share: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0"/>',
   home: '<path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/>',
   pad: '<path d="M7 8h10a5 5 0 0 1 4.6 7l-.7 1.7a2.5 2.5 0 0 1-4.2.6L15 15H9l-1.7 2.3a2.5 2.5 0 0 1-4.2-.6L2.4 15A5 5 0 0 1 7 8z"/><path d="M7 11v3M5.5 12.5h3M16 12h.01M18 13.5h.01"/>',
   swords: '<path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 6.5L14 2h3v3l-4.5 4.5M5 14l-2 2 3 3 2-2"/>',
@@ -278,3 +279,32 @@ const P = {
 };
 export const icon = (name, extra = "") =>
   raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" ${extra}>${P[name] || ""}</svg>`);
+
+// ─── реалтайм (WebSocket) ───
+const rtHandlers = {};
+let rtSock = null, rtRetry = 0, rtPing = null;
+export const rt = {
+  connected: false,
+  on(type, fn) { (rtHandlers[type] ||= new Set()).add(fn); return () => rtHandlers[type].delete(fn); },
+  send(obj) { if (rtSock?.readyState === 1) rtSock.send(JSON.stringify(obj)); },
+  connect() {
+    if (rtSock && rtSock.readyState <= 1) return;
+    const qs = tg?.initData ? `init=${encodeURIComponent(tg.initData)}` : devUser ? `dev=${encodeURIComponent(devUser)}` : "";
+    try { rtSock = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?${qs}`); } catch { return; }
+    rtSock.onopen = () => {
+      rt.connected = true; rtRetry = 0;
+      clearInterval(rtPing); rtPing = setInterval(() => rt.send({ type: "ping" }), 25000);
+      (rtHandlers.open || []).forEach((fn) => fn());
+    };
+    rtSock.onmessage = (e) => {
+      let ev; try { ev = JSON.parse(e.data); } catch { return; }
+      (rtHandlers[ev.type] || []).forEach((fn) => { try { fn(ev); } catch (err) { console.error(err); } });
+    };
+    rtSock.onclose = (e) => {
+      rt.connected = false; clearInterval(rtPing);
+      if (e.code === 4401 || e.code === 4403) return;
+      setTimeout(() => rt.connect(), Math.min(30000, 1000 * 2 ** rtRetry++));
+    };
+  },
+};
+document.addEventListener("visibilitychange", () => { if (!document.hidden) rt.connect(); });

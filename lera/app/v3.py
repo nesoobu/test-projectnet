@@ -290,6 +290,9 @@ async def clan_send(cid: int, body: MsgIn, me=Me):
     if not (await my_clan_role(me["tg_id"], cid))[1]:
         raise HTTPException(403, "Чат только для бойцов клана")
     mid = await db.run("INSERT INTO clan_messages (clan_id, sender, text) VALUES (?,?,?)", cid, me["tg_id"], body.text.strip())
+    from .realtime import hub
+    hub.push([r["tg_id"] for r in await db.all_("SELECT tg_id FROM clan_members WHERE clan_id=?", cid)],
+             {"type": "msg", "chat": f"c{cid}", "id": mid})
     return {"id": mid}
 
 

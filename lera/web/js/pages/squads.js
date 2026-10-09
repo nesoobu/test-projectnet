@@ -125,6 +125,7 @@ export function openSquad(id, onChange) {
       stop = chatRoom(el, {
         group: true,
         back: pop,
+        key: `s${id}`,
         head: () => html`<button class="row grow" data-act="info" style="text-align:left">
             <div class="grow" style="min-width:0"><b class="ell" style="display:block">${s.title}</b>
             <span class="small muted">${s.count}/${s.max_players} · ${modeName(s.mode, s.game)} · ${left(s.expires_at)}</span></div></button>

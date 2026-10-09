@@ -722,3 +722,18 @@ details.faq p { margin: 0 0 16px; color: var(--mute); }
 .msg.typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--mute); animation: typing 1s infinite; }
 .msg.typing i:nth-child(2) { animation-delay: .15s; } .msg.typing i:nth-child(3) { animation-delay: .3s; }
 @keyframes typing { 50% { opacity: .2; transform: translateY(-3px); } }
+
+/* ─── v5 ─── */
+.notif-toast { pointer-events: auto; text-align: left; cursor: pointer; background: var(--card2); color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--acc), 0 12px 30px -10px #000; white-space: pre-wrap; }
+.typing-line { height: 0; overflow: hidden; padding: 0 16px; font: 500 12px/1 var(--body); color: var(--acc); transition: height .2s; }
+.typing-line.on { height: 20px; }
+.friends-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 18px; background: var(--card); font-weight: 600; }
+.friends-row svg { width: 20px; height: 20px; }
+.inbox-item.new { background: color-mix(in srgb, var(--acc) 7%, transparent); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+.mm-card { width: 100%; margin-top: 10px; display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 20px; background: var(--card); box-shadow: inset 0 0 0 1.5px var(--line); }
+.mm-card > svg:first-child { color: var(--acc); }
+.mm-card.searching { box-shadow: inset 0 0 0 1.5px var(--acc); }
+.mm-radar { width: 36px; height: 36px; flex: none; position: relative; border-radius: 50%; background: color-mix(in srgb, var(--acc) 15%, transparent); }
+.mm-radar i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--acc); animation: radar 1.8s ease-out infinite; }
+.mm-radar i + i { animation-delay: .9s; }
+@keyframes radar { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }

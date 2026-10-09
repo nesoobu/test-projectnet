@@ -13,7 +13,8 @@ export function render(root) {
   const g = GI();
 
   mount(root, html`<div class="top"><div style="min-width:0"><div class="kicker">// ${greet()}</div>
-      <h1 class="h1 ell" style="margin-top:6px">${S.me.name.toLowerCase()}<i>.</i></h1></div>${gameSwitch()}</div>
+      <h1 class="h1 ell" style="margin-top:6px">${S.me.name.toLowerCase()}<i>.</i></h1></div>
+      <div class="row" style="gap:8px;flex:none"><button class="ibtn" data-act="inbox" id="bell">${icon("bell")}</button>${gameSwitch()}</div></div>
     <div id="hb"><div class="pad"><div class="skel" style="height:180px"></div></div></div>`);
   const box = root.querySelector("#hb");
 
@@ -21,6 +22,7 @@ export function render(root) {
     try {
       [data] = await Promise.all([api(`/api/home?game=${S.game}`)]);
       data.pass = await api("/api/pass").catch(() => null);
+      data.mm = await api(`/api/mm?game=${S.game}`).catch(() => null);
     } catch (e) { return fail(e); }
     draw();
   }
@@ -45,6 +47,21 @@ export function render(root) {
         ${p.note ? html`<div class="small rp-note">«${p.note}»</div>` : ""}
         <div class="row" style="margin-top:auto"><span class="small muted mono grow">${left(p.until)}</span>
           <button class="btn sm" data-act="invite" data-id="${p.tg_id}">го</button></div></div>`)}</div>` : ""}`;
+  }
+
+  function mmBlock() {
+    const mm = data.mm;
+    if (!mm) return "";
+    const mine = mm.mine && mm.mine.game === S.game ? mm.mine : null;
+    if (mine) {
+      const sec = Math.max(0, Math.floor((Date.now() - new Date(mine.created_at.replace(" ", "T") + "Z")) / 1000));
+      return html`<div class="mm-card searching"><div class="mm-radar"><i></i><i></i></div>
+        <div class="grow"><b>Ищу пати · ${GI().modes[mine.mode]} · ${mine.size}</b>
+          <div class="small muted mono"><span id="mmt" data-since="${mine.created_at}">${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}</span> · в очереди ${mm.total}</div></div>
+        <button class="btn sm dark" data-act="mm-leave">отмена</button></div>`;
+    }
+    return html`<button class="mm-card" data-act="${myGame() ? "mm-join" : "add-game"}">${icon("bolt", 'width="22" height="22"')}
+      <div class="grow" style="text-align:left"><b>Быстрый поиск пати</b><div class="small muted">${mm.total ? `сейчас в очереди: ${mm.total}` : "Лера соберёт отряд по рангу и ролям"}</div></div>${icon("send", 'width="18" height="18"')}</button>`;
   }
 
   function dailyBlock() {
@@ -89,6 +106,7 @@ export function render(root) {
 
   function draw() {
     mount(box, html`<div class="pad">${readyBlock()}
+      ${mmBlock()}
       <button class="ask-lera" data-act="ai"><div class="lera"><div class="face">Л</div></div>
         <div class="grow" style="text-align:left"><b>Спроси Леру</b><div class="small muted">роли, герои, тактика, тильт — ИИ-помощник</div></div>${icon("send", 'width="18" height="18"')}</button>
     </div>${dailyBlock()}${pollBlock()}${tourBlock()}<div class="sp"></div>`);
@@ -125,10 +143,25 @@ export function render(root) {
     top: async () => (await lazy("openTop"))(),
     rate: async () => (await lazy("openRate"))(),
     ai: async () => (await import("./ai.js")).openAI(),
+    inbox: async () => (await import("./friends.js")).openInbox(),
+    "mm-join": () => mmSheet(load),
+    "mm-leave": async () => { try { await api("/api/mm", { method: "DELETE" }); haptic.sel(); load(); } catch (e) { fail(e); } },
   });
-  const unsub = onState(() => data && draw());
+  const drawBell = () => {
+    const b = root.querySelector("#bell");
+    if (b) mount(b, html`${icon("bell")}${S.inbox ? html`<i class="badge">${S.inbox > 99 ? "99+" : S.inbox}</i>` : ""}`);
+  };
+  const unsub = onState(() => { drawBell(); data && draw(); });
+  drawBell();
+  let mmTimer = setInterval(() => {
+    const t = root.querySelector("#mmt");
+    if (!t) return;
+    const sec = Math.max(0, Math.floor((Date.now() - new Date(t.dataset.since.replace(" ", "T") + "Z")) / 1000));
+    t.textContent = `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
+    if (sec % 15 === 0) api(`/api/mm?game=${S.game}`).then((m) => { if (!m.mine && data.mm?.mine) { data.mm = m; draw(); } }).catch(() => {});
+  }, 1000);
   load();
-  return () => { off(); unsub(); };
+  return () => { off(); unsub(); clearInterval(mmTimer); };
 }
 
 export function tourCard(t) {
@@ -166,5 +199,44 @@ function readySheet(done) {
         } catch (e) { fail(e); }
       },
     });
+  });
+}
+
+function mmSheet(done) {
+  const g = GI(), mg = myGame();
+  const st = { mode: Object.keys(g.modes)[0], size: 2, role: mg?.roles?.[0] || null, voice: false };
+  sheet((el, close) => {
+    const draw = () => mount(el, html`<div class="kicker">${g.name}</div><h2 class="h2" style="margin:6px 0 16px">быстрый поиск<span class="dot">.</span></h2>
+      <div class="field"><span class="lbl">режим</span><div class="chips">${Object.entries(g.modes).map(([k, v]) => html`<button class="chip ${st.mode === k ? "on" : ""}" data-act="m" data-v="${k}">${v}</button>`)}</div></div>
+      <div class="field"><span class="lbl">сколько человек в пати</span><div class="seg">${[2, 3, 4, 5].map((n) => html`<button class="${st.size === n ? "on" : ""}" data-act="n" data-v="${n}">${n}</button>`)}</div></div>
+      <div class="field"><span class="lbl">моя роль</span><div class="chips">${Object.entries(g.roles).map(([k, v]) => html`<button class="chip ${st.role === k ? "on" : ""}" data-act="r" data-v="${k}">${v}</button>`)}</div></div>
+      <div class="field"><button class="toggle" data-act="v"><span>Хочу с голосом</span><i class="sw ${st.voice ? "on" : ""}"></i></button></div>
+      <button class="btn wide" data-act="go">${icon("bolt")}искать</button>
+      <p class="muted small" style="margin:10px 0 0">Подберу игроков близкого ранга с другими ролями. Чем дольше ждёшь — тем мягче фильтр. Как соберётся — откроется чат отряда.</p>`);
+    draw();
+    on(el, {
+      m: (b) => { st.mode = b.dataset.v; haptic.sel(); draw(); },
+      n: (b) => { st.size = +b.dataset.v; haptic.sel(); draw(); },
+      r: (b) => { st.role = b.dataset.v; haptic.sel(); draw(); },
+      v: () => { st.voice = !st.voice; draw(); },
+      go: async () => {
+        try { await api("/api/mm", { method: "POST", body: { game: S.game, ...st } }); haptic.ok(); close(); toast("Ищу пати…", "ok"); done?.(); }
+        catch (e) { fail(e); }
+      },
+    });
+  });
+}
+
+export function partyFound(squadId) {
+  const el = document.createElement("div");
+  el.className = "match";
+  mount(el, html`<div class="word" style="font-size:min(17vw,84px)">пати<br>найдено!</div>
+    ${leraSays("Собрала вам отряд. Познакомьтесь в чате и погнали в катку!")}
+    <div class="row" style="width:100%;max-width:340px"><button class="btn ghost grow" data-act="close">позже</button>
+      <button class="btn grow" data-act="open">${icon("chat")}в чат отряда</button></div>`);
+  document.body.append(el);
+  on(el, {
+    close: () => el.remove(),
+    open: async () => { el.remove(); const { route } = await import("../app.js"); route(`s${squadId}`); },
   });
 }

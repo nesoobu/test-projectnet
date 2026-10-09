@@ -60,17 +60,31 @@ export async function openPerson(pOrId, { onLike, onPass } = {}) {
         ${onLike ? html`<div class="row">
             <button class="btn ghost grow" data-act="pass">${icon("x")}мимо</button>
             <button class="btn grow" data-act="like">${icon("heart")}го катку</button></div>` : ""}
+        ${!isMe && !p.lera ? html`<div class="row" id="fr" style="margin-top:10px"></div>` : ""}
         ${!isMe && !p.lera ? html`<div class="row" style="margin-top:10px">
           <button class="btn dark grow sm" data-act="review">${icon("thumb")}оценить</button>
           <button class="btn dark grow sm" data-act="report">${icon("flag")}пожаловаться</button></div>` : ""}
       </div>`);
+    let fstatus = null;
+    const drawFriend = () => {
+      const box = el.querySelector("#fr");
+      if (!box || fstatus === null) return;
+      const label = { none: "в друзья", outgoing: "заявка отправлена", incoming: "принять в друзья", friends: "друзья ✓" }[fstatus];
+      mount(box, html`<button class="btn ${fstatus === "friends" || fstatus === "outgoing" ? "dark" : ""} grow sm" data-act="friend">${icon("user")}${label}</button>
+        ${fstatus === "friends" ? html`<button class="btn dark sm" data-act="fchat">${icon("chat")}</button><button class="btn dark sm" data-act="fgift">${icon("gift")}</button>` : ""}`);
+    };
+    const redraw = () => { draw(); drawFriend(); };
     draw();
+    if (!isMe && !p.lera) import("./friends.js").then((f) => f.friendButton(p.tg_id)).then((st) => { fstatus = st; drawFriend(); });
     on(el, {
+      friend: async () => { try { const f = await import("./friends.js"); fstatus = await f.friendAction(p, fstatus); drawFriend(); } catch (e) { fail(e); } },
+      fchat: async () => { close(); (await import("./friends.js")).openFriendChat(p.tg_id); },
+      fgift: async () => { close(); (await import("./friends.js")).giftSheet(p); },
       photo: (t, ev) => {
         if (p.photos.length < 2) return;
         const r = t.getBoundingClientRect();
         idx = (idx + (ev.clientX - r.left > r.width / 2 ? 1 : -1) + p.photos.length) % p.photos.length;
-        haptic.sel(); draw();
+        haptic.sel(); redraw();
       },
       like: () => { close(); onLike(p); },
       pass: () => { close(); onPass?.(p); },

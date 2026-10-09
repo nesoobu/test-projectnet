@@ -240,6 +240,23 @@ CREATE TABLE IF NOT EXISTS broadcasts (
     sent INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'running',
     created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER NOT NULL, text TEXT NOT NULL, link TEXT,
+    read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS notif_user ON notifications(tg_id, id);
+
+CREATE TABLE IF NOT EXISTS friends (
+    a INTEGER NOT NULL, b INTEGER NOT NULL, requester INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (a, b)
+);
+CREATE INDEX IF NOT EXISTS friends_b ON friends(b);
+
+CREATE TABLE IF NOT EXISTS mm_queue (
+    tg_id INTEGER PRIMARY KEY, game TEXT NOT NULL, mode TEXT NOT NULL, size INTEGER NOT NULL, role TEXT,
+    rank INTEGER, voice INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS admin_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT, admin INTEGER NOT NULL, action TEXT NOT NULL, target INTEGER, details TEXT,
     at TEXT NOT NULL DEFAULT (datetime('now'))

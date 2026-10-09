@@ -1,4 +1,4 @@
-import { tg, S, api, refreshMe, onState, emit, html, mount, icon, on, fail, closeAllScreens, leraSays } from "./core.js";
+import { tg, S, api, refreshMe, onState, emit, html, mount, icon, on, fail, closeAllScreens, leraSays, rt, haptic } from "./core.js";
 import "./games.js";
 import * as home from "./pages/home.js";
 import * as mates from "./pages/mates.js";
@@ -67,26 +67,64 @@ async function boot() {
     if (lastGame && S.game !== lastGame && current) go(current);   // сменили игру — перерисовать вкладку
   });
 
-  // deep links из уведомлений: m12 чат, s5 отряд, p7 пост, t3 турнир, likes, duet, home
+  // deep links из уведомлений бота: m12 чат, s5 отряд, p7 пост, t3 турнир, c2 клан, likes, duet, home, pass, friends
   const sp = new URLSearchParams(location.search).get("s") || tg?.initDataUnsafe?.start_param || "";
   let start = null;
   try { start = localStorage.getItem("lera_tab"); } catch {}
   if (!S.me.profile_done) { go("profile"); profile.openEditor(true); }
-  else if (/^m\d+$/.test(sp)) { go("chats"); chats.openMatch(+sp.slice(1)); }
-  else if (/^s\d+$/.test(sp)) { go("mates", "squads"); const { openSquad } = await import("./pages/squads.js"); openSquad(+sp.slice(1)); }
-  else if (/^p\d+$/.test(sp)) { go("feed"); feed.openComments(+sp.slice(1)); }
-  else if (/^t\d+$/.test(sp)) { go("home"); const { openTournament } = await import("./pages/more.js"); openTournament(+sp.slice(1)); }
-  else if (/^c\d+$/.test(sp)) { go("mates", "clans"); const { openClan } = await import("./pages/clans.js"); openClan(+sp.slice(1)); }
-  else if (sp === "pass") { go("home"); const { openPass } = await import("./pages/more.js"); openPass(); }
-  else if (sp === "likes") go("mates", "likes");
-  else if (sp === "duet") go("mates");
-  else if (sp === "home") go("home");
+  else if (sp && await route(sp)) { /* открыто */ }
   else go(TABS.some((t) => t.id === start) ? start : "home");
+
+  // реалтайм
+  rt.on("notif", (ev) => {
+    S.inbox = (S.inbox || 0) + 1; emit();
+    notifToast(ev.notif);
+  });
+  rt.on("msg", (ev) => {
+    if (ev.chat?.startsWith("m") && ev.message?.sender !== S.me.tg_id && !document.querySelector(`[data-chat="${ev.chat}"]`)) {
+      S.unread.chats += 1; emit();
+    }
+  });
+  rt.on("mm_found", async (ev) => {
+    haptic.ok();
+    const { partyFound } = await import("./pages/home.js");
+    partyFound(ev.squad);
+  });
+  rt.connect();
+  api("/api/inbox").then((r) => { S.inbox = r.unread; emit(); }).catch(() => {});
 
   setInterval(async () => {
     if (document.hidden) return;
     try { S.unread = await api("/api/ping", { method: "POST" }); emit(); } catch {}
   }, 45000);
+}
+
+// Переход по ссылке из уведомления: true, если поняли ссылку
+export async function route(link) {
+  const n = +String(link).slice(1);
+  if (/^m\d+$/.test(link)) { go("chats"); chats.openMatch(n); }
+  else if (/^s\d+$/.test(link)) { go("mates", "squads"); (await import("./pages/squads.js")).openSquad(n); }
+  else if (/^p\d+$/.test(link)) { go("feed"); feed.openComments(n); }
+  else if (/^t\d+$/.test(link)) { go("home"); (await import("./pages/more.js")).openTournament(n); }
+  else if (/^c\d+$/.test(link)) { go("mates", "clans"); (await import("./pages/clans.js")).openClan(n); }
+  else if (link === "pass") { go("home"); (await import("./pages/more.js")).openPass(); }
+  else if (link === "friends") { go("chats"); (await import("./pages/friends.js")).openFriends(); }
+  else if (link === "likes") go("mates", "likes");
+  else if (link === "duet") go("mates");
+  else if (link === "clips") go("feed");
+  else if (link === "home") go("home");
+  else return false;
+  return true;
+}
+
+function notifToast(n) {
+  const el = document.createElement("button");
+  el.className = "toast notif-toast";
+  el.textContent = n.text.length > 140 ? n.text.slice(0, 140) + "…" : n.text;
+  document.getElementById("toasts").append(el);
+  haptic.tap();
+  el.addEventListener("click", () => { el.remove(); if (n.link) route(n.link); });
+  setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 260); }, 4500);
 }
 
 boot().catch(fail);

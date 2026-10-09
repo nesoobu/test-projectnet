@@ -1,10 +1,12 @@
 """Уведомления через Bot API (fire-and-forget)."""
 import asyncio
 import logging
+import re
 
 import httpx
 
-from . import config
+from . import config, db
+from .realtime import hub
 
 log = logging.getLogger("lera.notify")
 _tasks: set[asyncio.Task] = set()
@@ -24,8 +26,21 @@ async def _send(chat_id: int, text: str, start: str | None):
         log.warning("notify %s failed: %s", chat_id, e)
 
 
-def send(chat_id: int, text: str, start: str | None = None):
-    t = asyncio.create_task(_send(chat_id, text, start))
+async def _deliver(chat_id: int, text: str, start: str | None, bot: bool):
+    """Входящие в приложении + мгновенный пуш по WebSocket. В бота — только если человек сейчас не в Лере."""
+    plain = re.sub(r"<[^>]+>", "", text).replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+    try:
+        if db._conn is not None and chat_id:
+            nid = await db.run("INSERT INTO notifications (tg_id, text, link) VALUES (?,?,?)", chat_id, plain[:500], start)
+            hub.push([chat_id], {"type": "notif", "notif": {"id": nid, "text": plain[:500], "link": start}})
+    except Exception as e:  # noqa: BLE001
+        log.warning("inbox %s failed: %s", chat_id, e)
+    if bot and not hub.online(chat_id):
+        await _send(chat_id, text, start)
+
+
+def send(chat_id: int, text: str, start: str | None = None, bot: bool = True):
+    t = asyncio.create_task(_deliver(chat_id, text, start, bot))
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)
 

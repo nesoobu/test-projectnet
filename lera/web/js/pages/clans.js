@@ -141,7 +141,7 @@ export function openClan(id, onChange) {
     }
     function room() {
       stop = chatRoom(el, {
-        group: true, back: null,
+        group: true, back: null, key: `c${id}`,
         head: () => html`<div class="row grow">${emblem(c, 36)}<div style="min-width:0"><b class="ell" style="display:block">${c.name}</b>
           <span class="small muted">${c.members} ${plural(c.members, "боец", "бойца", "бойцов")}</span></div></div>`,
         load: (after) => api(`/api/clans/${id}/messages?after=${after}`),

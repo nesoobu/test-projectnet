@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from . import config, content as C, db, notify
 from .auth import validate_init_data
+from .realtime import hub
 
 MSK = timezone(timedelta(hours=3))
 ONLINE_WINDOW = 5 * 60
@@ -26,8 +27,11 @@ async def lifespan(_app):
     await v4_init()
     from .v2 import background_loop
     task = asyncio.create_task(background_loop())
+    from .v5 import loop as v5_loop
+    task5 = asyncio.create_task(v5_loop())
     yield
     task.cancel()
+    task5.cancel()
     await db.close()
 
 
@@ -75,6 +79,8 @@ def is_premium(u: dict) -> bool:
 
 
 def is_online(u: dict) -> bool:
+    if u.get("tg_id") and hub.online(u["tg_id"]):
+        return True
     s = parse_ts(u.get("last_seen"))
     return bool(s and (utcnow() - s).total_seconds() < ONLINE_WINDOW)
 
@@ -365,6 +371,25 @@ async def save_profile(p: ProfileIn, me=Me):
     return (await people([me["tg_id"]]))[me["tg_id"]]
 
 
+def shrink_image(data: bytes, ext: str) -> tuple[bytes, str]:
+    """Фото с телефона весят по 5 МБ — ужимаем до 1600px и JPEG 85 (PNG с прозрачностью не трогаем)."""
+    try:
+        import io
+        from PIL import Image, ImageOps
+        im = Image.open(io.BytesIO(data))
+        im = ImageOps.exif_transpose(im)
+        if ext == ".png" and im.mode in ("RGBA", "LA", "P") and max(im.size) <= 1600:
+            return data, ext
+        im.thumbnail((1600, 1600))
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=85, optimize=True, progressive=True)
+        return (out.getvalue(), ".jpg") if out.tell() < len(data) or max(im.size) == 1600 else (data, ext)
+    except Exception:  # noqa: BLE001 — кривой файл отдадим как есть
+        return data, ext
+
+
 MAGIC = {b"\xff\xd8\xff": ".jpg", b"\x89PNG": ".png", b"RIFF": ".webp", b"GIF8": ".gif"}
 
 
@@ -376,6 +401,8 @@ async def upload(file: UploadFile = File(...), me=Me):
     ext = next((e for m, e in MAGIC.items() if data.startswith(m)), None)
     if not ext or (ext == ".webp" and data[8:12] != b"WEBP"):
         raise HTTPException(415, "Нужна картинка: jpg, png, webp или gif")
+    if ext in (".jpg", ".png", ".webp"):
+        data, ext = shrink_image(data, ext)
     name = f"{me['tg_id']}_{secrets.token_hex(8)}{ext}"
     (config.UPLOAD_DIR / name).write_bytes(data)
     return {"url": f"/uploads/{name}"}
@@ -622,7 +649,9 @@ async def chat_send(mid: int, body: MsgIn, me=Me):
     if first or not is_online(other or {}):
         name = _h((await people([me["tg_id"]]))[me["tg_id"]]["name"])
         notify.send(m["other"], f"💬 <b>{name}</b>: {_h(text[:120])}", f"m{mid}")
-    return await db.one("SELECT id, sender, text, created_at FROM match_messages WHERE id=?", msg_id)
+    msg = await db.one("SELECT id, sender, text, created_at FROM match_messages WHERE id=?", msg_id)
+    hub.push([m["other"], me["tg_id"]], {"type": "msg", "chat": f"m{mid}", "message": msg})
+    return msg
 
 
 @app.post("/api/chats/{mid}/unmatch")
@@ -788,6 +817,8 @@ async def squad_send(sid: int, body: MsgIn, me=Me):
     if not text:
         raise HTTPException(400, "Пустое сообщение")
     mid = await db.run("INSERT INTO squad_messages (squad_id, sender, text) VALUES (?,?,?)", sid, me["tg_id"], text)
+    members = [r["tg_id"] for r in await db.all_("SELECT tg_id FROM squad_members WHERE squad_id=?", sid)]
+    hub.push(members, {"type": "msg", "chat": f"s{sid}", "id": mid})
     await bump_quest(me["tg_id"], "squad_msg")
     return {"id": mid}
 
@@ -1170,6 +1201,10 @@ app.include_router(v3.router)
 from . import v4  # noqa: E402
 
 app.include_router(v4.router)
+
+from . import v5  # noqa: E402
+
+app.include_router(v5.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────
