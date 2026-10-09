@@ -835,6 +835,27 @@ async def admin_log(c: CallbackQuery):
     await out(c, "📜 <b>Журнал действий</b>\n\n" + ("\n".join(lines) or "Пусто"), kb(back()))
 
 
+@router.message(Command("fragment"))
+async def fragment_check(m: Message, role: str):
+    """Проверка настроек автовыдачи: кошелёк и баланс."""
+    if role != "owner":
+        return
+    from .. import config
+    lines = [f"Режим выдачи: <b>{await db.get('delivery_mode')}</b>",
+             f"Seed: {'✅' if config.FRAGMENT_SEED else '❌ нет FRAGMENT_SEED'}",
+             f"Cookies: {'✅' if config.FRAGMENT_COOKIES else '❌ нет FRAGMENT_COOKIES'}",
+             f"API-ключ ({config.FRAGMENT_API_PROVIDER}): {'✅' if config.FRAGMENT_API_KEY else '❌ нет FRAGMENT_API_KEY'}",
+             f"Версия кошелька: {config.FRAGMENT_WALLET_VERSION}"]
+    try:
+        addr, bal = await services.fragment_wallet()
+        lines.append(f"\nКошелёк: <code>{addr}</code>\nБаланс: <b>{bal:g} TON</b>")
+    except ImportError:
+        lines.append("\n❌ Библиотека не установлена: <code>pip install fragment-api-py</code>")
+    except Exception as e:
+        lines.append(f"\n❌ {html.escape(type(e).__name__)}: {html.escape(str(e))[:300]}")
+    await m.answer("\n".join(lines))
+
+
 @router.callback_query(F.data == "ad:bkp")
 async def backup_now(c: CallbackQuery):
     await c.answer("Готовлю бэкап…")
@@ -1009,8 +1030,8 @@ async def admin_input(m: Message, state: FSMContext):
         value = "" if text == "-" else text
         if data["typ"] in ("int", "float") and value and (_num(value) is None or _num(value) < 0):
             err = "Нужно число"
-        elif data["key"] == "delivery_mode" and value not in ("manual", "api"):
-            err = "Допустимо: manual или api"
+        elif data["key"] == "delivery_mode" and value not in ("manual", "fragment", "api"):
+            err = "Допустимо: manual, fragment или api"
         elif data["key"] == "levels" and value and not services.parse_levels(value):
             err = "Формат: <code>1000:2,5000:4</code>"
         elif data["key"] == "languages" and not value:

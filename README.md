@@ -76,6 +76,9 @@ python -m bot
 ## Выдача товара
 
 - `delivery_mode = manual`: админ получает уведомление и нажимает «✅ Выдано».
+- `delivery_mode = fragment`: бот сам покупает звёзды или Premium на Fragment с TON-кошелька магазина через библиотеку [fragment-api-py](https://github.com/s1qwy/fragment-api-py) (`pip install fragment-api-py`). Секреты задаются в `.env`: `FRAGMENT_SEED`, `FRAGMENT_COOKIES`, `FRAGMENT_API_KEY`. Проверка настроек и баланса — команда `/fragment`.
+  - ⚠️ Библиотека добавляет к каждой оплате в TON комиссию 0.5% на адрес своего автора.
+  - Если транзакция ушла, но результат неизвестен, бот **не повторяет** покупку автоматически, чтобы не заплатить дважды. Админу приходит просьба проверить её вручную.
 - `delivery_mode = api`: бот отправляет `POST delivery_api_url` с заголовком `Authorization: Bearer <delivery_api_key>` и телом:
   ```json
   {"type": "stars", "username": "durov", "quantity": 500, "order_id": 1}

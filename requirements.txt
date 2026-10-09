@@ -3,3 +3,5 @@ aiosqlite>=0.20
 python-dotenv>=1.0
 # по желанию, для REDIS_URL:
 # redis>=5.0
+# для автовыдачи через Fragment:
+# fragment-api-py>=13.0

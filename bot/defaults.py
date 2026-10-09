@@ -40,13 +40,13 @@ SETTINGS = {
     "topup_min": ("50", "Мин. сумма пополнения", "float", "pay"),
     "order_ttl_min": ("60", "Отмена неоплаченного заказа через, мин", "int", "pay"),
     # выдача
-    "delivery_mode": ("manual", "Выдача: manual | api", "str", "delivery"),
+    "delivery_mode": ("manual", "Выдача: manual | fragment | api", "str", "delivery"),
     "delivery_api_url": ("", "URL API выдачи (Fragment-провайдер)", "str", "delivery"),
     "delivery_api_key": ("", "Ключ API выдачи", "str", "delivery"),
     "delivery_retries": ("4", "Попыток автовыдачи (пауза 1, 2, 4... мин)", "int", "delivery"),
     "auto_refund_min": ("0", "Автовозврат на баланс, если не выдано за N мин (0 — выкл)", "int", "delivery"),
     "delivery_balance_url": ("", "URL баланса провайдера (GET → {\"balance\": x})", "str", "delivery"),
-    "low_balance_alert": ("0", "Алерт, если баланс провайдера ниже", "float", "delivery"),
+    "low_balance_alert": ("0", "Алерт, если баланс для выдачи ниже (TON для fragment)", "float", "delivery"),
     "check_recipient": ("1", "Проверять @username до оплаты", "bool", "delivery"),
     # рефералы
     "ref_percent": ("5", "Реферальный % (1 уровень)", "float", "ref"),

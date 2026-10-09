@@ -12,6 +12,7 @@ import aiosqlite
 from aiogram import Bot
 from aiogram.types import FSInputFile, InlineKeyboardButton as Btn, InlineKeyboardMarkup as Kb
 
+from . import config
 from .config import ADMIN_IDS
 from .db import db
 from .render import base_ctx, mask, money, send_key, sys_btn
@@ -352,21 +353,79 @@ async def mark_paid(bot: Bot, oid: int) -> bool:
 
 async def deliver(bot: Bot, oid: int):
     order = await db.order(oid)
-    if (await db.get("delivery_mode")) == "api" and await db.get("delivery_api_url"):
-        ok, err = await _deliver_api(order)
+    mode = await db.get("delivery_mode")
+    if mode == "fragment" or (mode == "api" and await db.get("delivery_api_url")):
+        if mode == "fragment":
+            ok, err, retry = await _deliver_fragment(order)
+        else:
+            (ok, err), retry = await _deliver_api(order), True
         if ok:
             await complete(bot, oid)
             return
-        attempts = order["attempts"] + 1
         max_tries = max(await db.get_int("delivery_retries"), 1)
+        # retry=False — повтор опасен (могли уже заплатить) или бессмыслен: сразу к админу
+        attempts = order["attempts"] + 1 if retry else max_tries
         await db.run("UPDATE orders SET attempts=?, next_try=? WHERE id=?",
                      attempts, int(time.time()) + 60 * 2 ** (attempts - 1), oid)
         await db.set_status(oid, "failed")
         if attempts >= max_tries:
-            await notify_admins(bot, f"⚠️ <b>Автовыдача не удалась</b> ({attempts} попыток)\n{order_line(order)}\n"
-                                     f"<code>{html.escape(err)}</code>", order_admin_kb(oid, paid=True))
+            hint = "" if retry else "\n❗️ Автоповтор отключён: проверьте на fragment.com, прошла ли покупка."
+            await notify_admins(bot, f"⚠️ <b>Автовыдача не удалась</b>\n{order_line(order)}\n"
+                                     f"<code>{html.escape(err)}</code>{hint}", order_admin_kb(oid, paid=True))
         return
     await notify_admins(bot, f"🆕 <b>Выдайте товар</b>\n{order_line(order)}", order_admin_kb(oid, paid=True))
+
+
+# ================= выдача через Fragment (библиотека fragment-api-py) =================
+
+_fragment_lock = asyncio.Lock()  # покупки строго по одной: у кошелька общий seqno
+
+
+def fragment_client():
+    from FragmentAPI import FragmentClient  # pip install fragment-api-py
+    return FragmentClient(cookies=config.FRAGMENT_COOKIES or None, seed=config.FRAGMENT_SEED,
+                          api_key=config.FRAGMENT_API_KEY, api_provider=config.FRAGMENT_API_PROVIDER,
+                          wallet_version=config.FRAGMENT_WALLET_VERSION)
+
+
+async def _deliver_fragment(order: dict) -> tuple[bool, str, bool]:
+    """Покупка на Fragment с TON-кошелька магазина. Возвращает (успех, ошибка, можно ли повторять)."""
+    if not (config.FRAGMENT_SEED and config.FRAGMENT_API_KEY):
+        return False, "В .env не заданы FRAGMENT_SEED и FRAGMENT_API_KEY", False
+    try:
+        from FragmentAPI import exceptions as fx
+    except ImportError:
+        return False, "Библиотека не установлена: pip install fragment-api-py", False
+    async with _fragment_lock:
+        try:
+            async with fragment_client() as fc:
+                if order["kind"] == "premium":
+                    res = await fc.purchase_premium(order["recipient"], order["stars"],
+                                                    show_sender=False, payment_method="ton")
+                else:
+                    res = await fc.purchase_stars(order["recipient"], order["stars"],
+                                                  show_sender=False, payment_method="ton")
+        except (fx.BroadcastUncertainError, fx.ConfirmationTimeout) as e:
+            return False, f"Транзакция отправлена, но результат неизвестен: {e}", False
+        except fx.UserNotFoundError as e:
+            return False, f"Получатель не найден на Fragment: {e}", False
+        except (fx.ConfigurationError, fx.CookieError) as e:
+            return False, f"Ошибка настроек Fragment: {e}", False
+        except Exception as e:
+            return False, f"{type(e).__name__}: {e}", True  # до отправки транзакции — можно повторить
+    if getattr(res, "confirmed", False):
+        log.info("fragment #%s ok tx=%s", order["id"], getattr(res, "transaction_id", ""))
+        return True, "", False
+    tx = getattr(res, "transaction_id", None)
+    if tx:
+        return False, f"Транзакция {tx} отправлена, Fragment не подтвердил: {res.confirmation_error}", False
+    return False, "Кошелёк не подключён (проверьте FRAGMENT_SEED)", False
+
+
+async def fragment_wallet() -> tuple[str, float]:
+    async with fragment_client() as fc:
+        w = await fc.get_wallet()
+    return w.address, w.gram_balance
 
 
 async def _deliver_api(order: dict) -> tuple[bool, str]:
@@ -620,18 +679,24 @@ async def _expire_and_remind(bot: Bot):
 
 async def _low_balance(bot: Bot):
     global _low_balance_alerted
-    url, limit = await db.get("delivery_balance_url"), await db.get_float("low_balance_alert")
-    if not url or not limit:
+    limit = await db.get_float("low_balance_alert")
+    url = await db.get("delivery_balance_url")
+    fragment = await db.get("delivery_mode") == "fragment" and config.FRAGMENT_SEED
+    if not limit or not (url or fragment):
         return
     try:
-        _, data = await http_json("GET", url, headers={"Authorization": f"Bearer {await db.get('delivery_api_key')}"})
-        bal = float(data.get("balance"))
+        if fragment:
+            _, bal = await fragment_wallet()
+        else:
+            _, data = await http_json("GET", url, headers={"Authorization": f"Bearer {await db.get('delivery_api_key')}"})
+            bal = float(data.get("balance"))
     except Exception as e:
         log.warning("balance check: %s", e)
         return
     if bal < limit and time.time() - _low_balance_alerted > 3600:
         _low_balance_alerted = time.time()
-        await notify_admins(bot, f"🪫 <b>Низкий баланс провайдера выдачи:</b> {bal}")
+        unit = " TON" if fragment else ""
+        await notify_admins(bot, f"🪫 <b>Низкий баланс для выдачи:</b> {bal:g}{unit}")
 
 
 async def _scheduled_broadcasts(bot: Bot):
