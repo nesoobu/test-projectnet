@@ -33,6 +33,9 @@ async def chat_members(key: str, uid: int) -> list[int] | None:
         ids = [r["tg_id"] for r in await db.all_("SELECT tg_id FROM squad_members WHERE squad_id=?", i)]
     elif kind == "c":
         ids = [r["tg_id"] for r in await db.all_("SELECT tg_id FROM clan_members WHERE clan_id=?", i)]
+    elif kind == "t":
+        from .v6 import t_chat_ids
+        ids = await t_chat_ids(i)
     else:
         return None
     return ids if uid in ids else None

@@ -71,7 +71,7 @@ export function render(root) {
         <button class="tile ${m.checked_today ? "" : "acc"}" data-act="checkin">${icon("gift")}
           <div><b>${m.checked_today ? "Ежедневка забрана" : "Забрать ежедневку"}</b><div class="sub">стрик ${m.streak} ${plural(m.streak, "день", "дня", "дней")}</div></div></button>
         <button class="tile ${L.over ? "" : "acc2"}" data-act="leradle">${icon("puzzle")}
-          <div><b>Лерадл</b><div class="sub">${L.solved ? `разгадан ✓ · стрик ${L.streak}` : L.over ? "не вышло, завтра новый" : L.tries ? `попыток: ${L.tries}/6` : "угадай героя дня"}</div></div></button>
+          <div><b>Лерадл</b><div class="sub">${L.solved ? `разгадан ✓ · стрик ${L.streak}` : L.over ? "не вышло, завтра новый" : L.tries ? `попыток: ${L.tries}/6` : `угадай: ${GI(L.game).short}`}</div></div></button>
         <button class="tile" data-act="quests">${icon("target")}<div><b>Квесты</b><div class="sub">${data.quests_ready ? `${data.quests_ready} готово забрать` : "награды за активность"}</div></div>
           ${data.quests_ready ? html`<i class="badge">${data.quests_ready}</i>` : ""}</button>
         <button class="tile" data-act="pass">${icon("crown")}<div><b>Боевой пропуск</b><div class="sub">${data.pass ? `ур. ${data.pass.level}/${data.pass.max}${data.pass.ready ? ` · ${data.pass.ready} наград` : ""}` : "сезон месяца"}</div></div>
@@ -171,7 +171,7 @@ export function tourCard(t) {
     <div class="tour-date"><b>${d.getDate()}</b><span>${d.toLocaleDateString("ru", { month: "short" })}</span></div>
     <div class="grow" style="min-width:0"><div class="row" style="gap:6px"><span class="tag ${st[1]}">${st[0]}</span>${t.joined ? html`<span class="tag">ты участвуешь</span>` : ""}</div>
       <b class="ell" style="display:block;margin-top:6px">${t.title}</b>
-      <span class="small muted">${t.team_size === 1 ? "соло" : `${t.team_size}×${t.team_size}`} · ${t.teams}/${t.max_teams} · ${d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</span></div>
+      <span class="small muted">${t.team_size === 1 ? "соло" : `${t.team_size}×${t.team_size}`}${t.best_of > 1 ? ` · Bo${t.best_of}` : ""} · ${t.teams}/${t.max_teams}${t.entry_fee ? ` · взнос ${t.entry_fee}` : ""} · ${d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}</span></div>
     ${t.prize ? html`<span class="coin">${t.prize}</span>` : ""}</button>`;
 }
 

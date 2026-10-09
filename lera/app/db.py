@@ -257,6 +257,15 @@ CREATE TABLE IF NOT EXISTS mm_queue (
     rank INTEGER, voice INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS leradle2 (
+    tg_id INTEGER NOT NULL, day TEXT NOT NULL, game TEXT NOT NULL, guesses TEXT NOT NULL DEFAULT '[]',
+    solved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (tg_id, day, game)
+);
+CREATE TABLE IF NOT EXISTS t_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, tid INTEGER NOT NULL, sender INTEGER NOT NULL, text TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS admin_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT, admin INTEGER NOT NULL, action TEXT NOT NULL, target INTEGER, details TEXT,
     at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -276,6 +285,21 @@ COLUMNS = [
     ("users", "banned", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "ban_reason", "TEXT"),
     ("blocks", "resolved", "INTEGER NOT NULL DEFAULT 0"),
+    ("tournaments", "best_of", "INTEGER NOT NULL DEFAULT 1"),
+    ("tournaments", "entry_fee", "INTEGER NOT NULL DEFAULT 0"),
+    ("tournaments", "checkin", "INTEGER NOT NULL DEFAULT 0"),
+    ("tournaments", "auto_start", "INTEGER NOT NULL DEFAULT 0"),
+    ("tournaments", "reminded", "INTEGER NOT NULL DEFAULT 0"),
+    ("tournaments", "prize_split", "TEXT NOT NULL DEFAULT '[70,30]'"),
+    ("tournaments", "rules", "TEXT"),
+    ("t_teams", "checked_in", "INTEGER NOT NULL DEFAULT 0"),
+    ("t_matches", "lobby", "TEXT"),
+    ("t_matches", "score", "TEXT"),
+    ("t_matches", "report_a", "INTEGER"),
+    ("t_matches", "report_b", "INTEGER"),
+    ("t_matches", "reported_at", "TEXT"),
+    ("t_matches", "disputed", "INTEGER NOT NULL DEFAULT 0"),
+    ("t_matches", "proof", "TEXT"),
 ]
 
 
@@ -291,6 +315,11 @@ async def migrate(conn):
             "INSERT OR IGNORE INTO user_games (tg_id, game, rank, roles, heroes) "
             "SELECT tg_id, 'hok', rank, roles, heroes FROM profiles WHERE rank IS NOT NULL OR roles != '[]'")
         await conn.execute("INSERT INTO meta (key, val) VALUES ('games_v1', '1')")
+    cur = await conn.execute("SELECT val FROM meta WHERE key='leradle_v2'")
+    if not await cur.fetchone():
+        await conn.execute("INSERT OR IGNORE INTO leradle2 (tg_id, day, game, guesses, solved) "
+                           "SELECT tg_id, day, 'hok', guesses, solved FROM leradle")
+        await conn.execute("INSERT INTO meta (key, val) VALUES ('leradle_v2', '1')")
     # системный автор постов
     await conn.execute("INSERT OR IGNORE INTO users (tg_id, first_name, balance) VALUES (0, 'Лера', 0)")
     await conn.execute("INSERT OR IGNORE INTO profiles (tg_id, nickname, duet_visible) VALUES (0, 'Лера', 0)")

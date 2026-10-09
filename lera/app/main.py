@@ -29,9 +29,12 @@ async def lifespan(_app):
     task = asyncio.create_task(background_loop())
     from .v5 import loop as v5_loop
     task5 = asyncio.create_task(v5_loop())
+    from .v6 import loop as v6_loop
+    task6 = asyncio.create_task(v6_loop())
     yield
     task.cancel()
     task5.cancel()
+    task6.cancel()
     await db.close()
 
 
@@ -324,6 +327,7 @@ async def bootstrap(me=Me):
                           "roles": g["roles"], "modes": g["modes"], "heroes": bool(g.get("heroes"))}
                       for k, g in C.GAMES.items()},
             "review_tags": C.REVIEW_TAGS, "weekend": is_weekend(), "clan_cost": C.CLAN_COST,
+            "entity": C.ENTITY, "leradle_games": C.LERADLE_GAMES,
         },
     }
 
@@ -413,6 +417,8 @@ async def user_card(tg_id: int, me=Me):
     p = (await people([tg_id])).get(tg_id)
     if not p:
         raise HTTPException(404, "Нет такого игрока")
+    p["trophies"] = await db.val("SELECT COUNT(*) FROM tournaments t JOIN t_members m ON m.team_id=t.winner "
+                                 "WHERE t.status='done' AND m.tg_id=?", tg_id) or 0
     return p
 
 
@@ -1205,6 +1211,10 @@ app.include_router(v4.router)
 from . import v5  # noqa: E402
 
 app.include_router(v5.router)
+
+from . import v6  # noqa: E402
+
+app.include_router(v6.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────

@@ -737,3 +737,19 @@ details.faq p { margin: 0 0 16px; color: var(--mute); }
 .mm-radar i { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--acc); animation: radar 1.8s ease-out infinite; }
 .mm-radar i + i { animation-delay: .9s; }
 @keyframes radar { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+
+/* ── v6: турниры ── */
+.toggle-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 14px; background: var(--card); text-align: left; font-size: 14px; }
+.tour-hero .pool { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed color-mix(in srgb, currentColor 30%, transparent); }
+.tour-hero .pool b { display: block; font-family: var(--display); font-size: 22px; margin-top: 4px; }
+.tour-hero .places { display: flex; gap: 10px; font-family: "JetBrains Mono", monospace; font-size: 13px; }
+.my-match { border: 1.5px solid var(--acc); }
+.my-match .vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 10px; margin: 10px 0 12px; font-size: 16px; }
+.my-match .vs b:last-child { text-align: right; }
+.my-match .vs span { font-family: "JetBrains Mono", monospace; color: var(--acc); font-size: 12px; text-transform: uppercase; }
+.lobby { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--bg); }
+.lobby code { font-family: "JetBrains Mono", monospace; font-size: 16px; color: var(--acc); overflow-wrap: anywhere; }
+.lobby .ibtn { width: 34px; height: 34px; }
+.b-score { padding: 4px 10px 0; font-size: 11px; color: var(--mute); text-align: right; }
+.b-match.disputed { box-shadow: inset 0 0 0 1.5px var(--hot); }
+.b-match.disputed .b-score { color: var(--hot); }

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from . import content as C, db, notify
 from .main import (MSK, Me, _h, add_balance, add_xp, bump_quest, get_or_create_match, is_online, jl, people,
-                   sqlts, today, utcnow, yday)
+                   spend, sqlts, today, utcnow, yday)
 
 router = APIRouter(prefix="/api")
 log = logging.getLogger("lera.v2")
@@ -352,7 +352,7 @@ async def user_stats(uid: int) -> dict:
         "legendaries": await v(f"SELECT COUNT(*) FROM inventory WHERE tg_id=? AND item_id IN ({q})", uid, *legendary),
         "items": await v("SELECT COUNT(*) FROM inventory WHERE tg_id=?", uid),
         "games": await v("SELECT COUNT(*) FROM user_games WHERE tg_id=?", uid),
-        "leradle": await v("SELECT COUNT(*) FROM leradle WHERE tg_id=? AND solved=1", uid),
+        "leradle": await v("SELECT COUNT(*) FROM leradle2 WHERE tg_id=? AND solved=1", uid),
         "t_wins": await v("SELECT COUNT(*) FROM tournaments t JOIN t_members m ON m.team_id=t.winner WHERE m.tg_id=?", uid),
         "ready": await v("SELECT COUNT(*) FROM notify_log WHERE tg_id=? AND kind='ready_self'", uid),
     }
@@ -474,6 +474,22 @@ class TourIn(BaseModel):
     max_teams: int = Field(8, ge=2, le=64)
     prize: int = Field(0, ge=0, le=100000)
     starts_at: str
+    best_of: int = Field(1, ge=1, le=5)
+    entry_fee: int = Field(0, ge=0, le=5000)
+    checkin: bool = True
+    auto_start: bool = True
+    prize_split: list[int] = [70, 30]
+    rules: str = Field("", max_length=2000)
+
+
+async def fees_total(tid: int, t: dict) -> int:
+    return (t.get("entry_fee") or 0) * (await db.val("SELECT COUNT(*) FROM t_members WHERE tid=?", tid) or 0)
+
+
+async def refund_fee(t: dict, uids):
+    if t.get("entry_fee"):
+        for u in uids:
+            await add_balance(u, t["entry_fee"], f"t_refund:{t['id']}")
 
 
 async def t_get(tid: int) -> dict:
@@ -502,13 +518,18 @@ async def tournaments(game: str = "", me=Me):
 async def tour_create(body: TourIn, me=Me):
     need_admin(me)
     g = need_game(body.game)
-    tid = await db.run("INSERT INTO tournaments (game, title, about, team_size, max_teams, prize, starts_at, created_by) "
-                       "VALUES (?,?,?,?,?,?,?,?)", body.game, body.title.strip(), body.about.strip(), body.team_size,
-                       body.max_teams, body.prize, msk_to_utc(body.starts_at), me["tg_id"])
+    split = [x for x in body.prize_split if x > 0][:2] or [100]
+    if sum(split) != 100:
+        raise HTTPException(400, "Доли приза должны давать 100%")
+    tid = await db.run("INSERT INTO tournaments (game, title, about, team_size, max_teams, prize, starts_at, created_by, "
+                       "best_of, entry_fee, checkin, auto_start, prize_split, rules) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       body.game, body.title.strip(), body.about.strip(), body.team_size, body.max_teams, body.prize,
+                       msk_to_utc(body.starts_at), me["tg_id"], body.best_of, body.entry_fee, int(body.checkin),
+                       int(body.auto_start), json.dumps(split), body.rules.strip() or None)
     fmt = "соло" if body.team_size == 1 else f"{body.team_size}×{body.team_size}"
-    await autopost(f"🏆 Новый турнир по {g['short']}: «{body.title}»\n{fmt} · до {body.max_teams} участников"
-                   + (f" · приз {body.prize} несо" if body.prize else "") + "\nРегистрация уже открыта — вкладка «Главная».",
-                   body.game, "news")
+    await autopost(f"🏆 Новый турнир по {g['short']}: «{body.title}»\n{fmt} · Bo{body.best_of} · до {body.max_teams} участников"
+                   + (f" · приз {body.prize} несо" if body.prize else "") + (f" · взнос {body.entry_fee}" if body.entry_fee else "")
+                   + "\nРегистрация уже открыта — вкладка «Главная».", body.game, "news")
     return {"id": tid}
 
 
@@ -521,8 +542,15 @@ async def tour_view(tid: int, me=Me):
     for tm in teams:
         tm["members"] = [ppl[m["tg_id"]] for m in mem if m["team_id"] == tm["id"] and m["tg_id"] in ppl]
     matches = await db.all_("SELECT * FROM t_matches WHERE tid=? ORDER BY round, pos", tid)
-    return {**t, "teams": teams, "matches": matches, "my_team": await my_team(tid, me["tg_id"]),
-            "rounds": max([m["round"] for m in matches], default=0)}
+    mt = await my_team(tid, me["tg_id"])
+    starts = datetime.strptime(t["starts_at"], "%Y-%m-%d %H:%M:%S")
+    pool = t["prize"] + await fees_total(tid, t)
+    split = jl(t["prize_split"]) or [100]
+    return {**t, "teams": teams, "matches": matches, "my_team": mt,
+            "my_captain": bool(mt and next((x for x in teams if x["id"] == mt), {}).get("captain") == me["tg_id"]),
+            "rounds": max([m["round"] for m in matches], default=0), "pool": pool,
+            "payouts": [pool * p // 100 for p in split], "checkin_open": bool(t["checkin"]) and t["status"] == "reg"
+            and utcnow() >= starts - timedelta(minutes=30), "server_now": sqlts(utcnow())}
 
 
 class RegIn(BaseModel):
@@ -541,6 +569,8 @@ async def tour_register(tid: int, body: RegIn, me=Me):
         raise HTTPException(409, "Мест нет")
     if not await db.one("SELECT 1 FROM user_games WHERE tg_id=? AND game=?", uid, t["game"]):
         raise HTTPException(400, f"Сначала добавь {C.GAMES[t['game']]['short']} в профиль")
+    if t["entry_fee"]:
+        await spend(uid, t["entry_fee"], f"t_fee:{tid}")
     name = body.team_name.strip() or (await people([uid]))[uid]["name"]
     team = await db.run("INSERT INTO t_teams (tid, name, captain) VALUES (?,?,?)", tid, name, uid)
     await db.run("INSERT INTO t_members (team_id, tid, tg_id) VALUES (?,?,?)", team, tid, uid)
@@ -560,6 +590,8 @@ async def tour_join_team(tid: int, team: int, me=Me):
         raise HTTPException(404, "Команда не найдена")
     if await db.val("SELECT COUNT(*) FROM t_members WHERE team_id=?", team) >= t["team_size"]:
         raise HTTPException(409, "Команда уже полная")
+    if t["entry_fee"]:
+        await spend(uid, t["entry_fee"], f"t_fee:{tid}")
     await db.run("INSERT INTO t_members (team_id, tid, tg_id) VALUES (?,?,?)", team, tid, uid)
     nm = (await people([uid]))[uid]["name"]
     notify.send(tm["captain"], f"🏆 <b>{_h(nm)}</b> вступил(а) в твою команду «{_h(tm['name'])}» на «{_h(t['title'])}»", f"t{tid}")
@@ -576,6 +608,7 @@ async def tour_leave(tid: int, me=Me):
     if not team:
         return {"ok": True}
     await db.run("DELETE FROM t_members WHERE tid=? AND tg_id=?", tid, uid)
+    await refund_fee(t, [uid])
     left = await db.one("SELECT tg_id FROM t_members WHERE team_id=? LIMIT 1", team)
     if left:
         await db.run("UPDATE t_teams SET captain=? WHERE id=? AND captain=?", left["tg_id"], team, uid)
@@ -601,14 +634,25 @@ async def advance(t: dict, m: dict, winner: int):
 
 
 async def finish(t: dict, winner: int):
+    t = await db.one("SELECT * FROM tournaments WHERE id=?", t["id"])
     await db.run("UPDATE tournaments SET status='done', winner=? WHERE id=?", winner, t["id"])
     team = await db.one("SELECT * FROM t_teams WHERE id=?", winner)
     members = [r["tg_id"] for r in await db.all_("SELECT tg_id FROM t_members WHERE team_id=?", winner)]
-    for uid in members:
-        if t["prize"]:
-            await add_balance(uid, t["prize"], f"tournament:{t['id']}")
-        await add_xp(uid, 100)
-        notify.send(uid, f"🏆 Победа в «{_h(t['title'])}»!" + (f" +{t['prize']} несо" if t["prize"] else ""), f"t{t['id']}")
+    final = await db.one("SELECT * FROM t_matches WHERE tid=? ORDER BY round DESC LIMIT 1", t["id"])
+    runner = (final["team_b"] if final["team_a"] == winner else final["team_a"]) if final else None
+    pool = t["prize"] + await fees_total(t["id"], t)
+    split = jl(t.get("prize_split")) or [100]
+    places = [(winner, split[0], "🏆 Победа"), (runner, split[1] if len(split) > 1 else 0, "🥈 Второе место")]
+    for team_id, pct, label in places:
+        if not team_id:
+            continue
+        ids = [r["tg_id"] for r in await db.all_("SELECT tg_id FROM t_members WHERE team_id=?", team_id)]
+        share = (pool * pct // 100) // max(1, len(ids))
+        for uid in ids:
+            if share:
+                await add_balance(uid, share, f"tournament:{t['id']}")
+            await add_xp(uid, 100 if team_id == winner else 50)
+            notify.send(uid, f"{label} в «{_h(t['title'])}»!" + (f" +{share} несо" if share else ""), f"t{t['id']}")
     ppl = await people(members)
     names = ", ".join(ppl[u]["name"] for u in members if u in ppl)
     who = team["name"] if t["team_size"] > 1 else names
@@ -622,9 +666,22 @@ async def tour_start(tid: int, me=Me):
     t = await t_get(tid)
     if t["status"] != "reg":
         raise HTTPException(409, "Турнир уже запущен")
+    return await start_tournament(t)
+
+
+async def start_tournament(t: dict) -> dict:
+    tid = t["id"]
+    if t["checkin"]:   # не отметившиеся вылетают, взнос возвращается
+        for tm in await db.all_("SELECT id FROM t_teams WHERE tid=? AND checked_in=0", tid):
+            ids = [r["tg_id"] for r in await db.all_("SELECT tg_id FROM t_members WHERE team_id=?", tm["id"])]
+            await refund_fee(t, ids)
+            for u in ids:
+                notify.send(u, f"⌛ Ты не отметился на «{_h(t['title'])}» — участие снято" + (", взнос возвращён" if t["entry_fee"] else ""), f"t{tid}")
+            await db.run("DELETE FROM t_members WHERE team_id=?", tm["id"])
+            await db.run("DELETE FROM t_teams WHERE id=?", tm["id"])
     teams = [r["id"] for r in await db.all_("SELECT id FROM t_teams WHERE tid=?", tid)]
     if len(teams) < 2:
-        raise HTTPException(409, "Нужно минимум 2 участника")
+        raise HTTPException(409, "Нужно минимум 2 участника" + (" с чек-ином" if t["checkin"] else ""))
     random.shuffle(teams)
     size = 2 ** math.ceil(math.log2(len(teams)))
     rounds = int(math.log2(size))
@@ -648,6 +705,7 @@ async def tour_start(tid: int, me=Me):
 
 class WinIn(BaseModel):
     team: int
+    score: str = Field("", max_length=12)
 
 
 @router.post("/tournaments/{tid}/matches/{mid}/winner")
@@ -661,6 +719,7 @@ async def tour_winner(tid: int, mid: int, body: WinIn, me=Me):
         raise HTTPException(409, "Победитель уже выбран")
     if body.team not in (m["team_a"], m["team_b"]) or not (m["team_a"] and m["team_b"]):
         raise HTTPException(400, "Эта команда не играет в матче")
+    await db.run("UPDATE t_matches SET disputed=0, score=COALESCE(NULLIF(?,''), score) WHERE id=?", body.score.strip(), mid)
     await advance(t, m, body.team)
     from .v4 import settle_predictions
     await settle_predictions(t, mid, body.team)
@@ -670,6 +729,9 @@ async def tour_winner(tid: int, mid: int, body: WinIn, me=Me):
 @router.delete("/tournaments/{tid}")
 async def tour_cancel(tid: int, me=Me):
     need_admin(me)
+    t = await t_get(tid)
+    if t["status"] in ("reg", "live"):
+        await refund_fee(t, [r["tg_id"] for r in await db.all_("SELECT tg_id FROM t_members WHERE tid=?", tid)])
     await db.run("UPDATE tournaments SET status='cancelled' WHERE id=?", tid)
     return {"ok": True}
 
@@ -692,6 +754,18 @@ async def poll_view(p: dict, uid: int) -> dict:
 async def poll_today(game: str = "", me=Me):
     d = today()
     p = await db.one("SELECT * FROM polls WHERE day=? AND game=?", d, game) if game in C.GAMES else None
+    if not p and game in C.GAMES and C.GAMES[game].get("heroes"):
+        ordn = datetime.now(MSK).date().toordinal()
+        if ordn % 2:   # через день — опрос про свою игру: мета, баны, любимые карты
+            g = C.GAMES[game]
+            rnd = random.Random(f"poll:{game}:{d}")
+            opts = [h[0] for h in rnd.sample(g["heroes"], min(4, len(g["heroes"])))]
+            ent = C.ENTITY.get(game, "Герои")
+            q = rnd.choice([f"Лучшая карта в {g['short']}?", f"На какой карте {g['short']} ты сильнее?"]) if ent == "Карты" else \
+                rnd.choice([f"Кто сильнее в текущей мете {g['short']}?", f"Кого бы ты забанил в {g['short']}?",
+                            f"Кого тебе хочется взять в следующей катке {g['short']}?", f"Самый переоценённый в {g['short']}?"])
+            await db.run("INSERT INTO polls (question, options, game, day) VALUES (?,?,?,?)", q, json.dumps(opts, ensure_ascii=False), game, d)
+            p = await db.one("SELECT * FROM polls WHERE day=? AND game=?", d, game)
     p = p or await db.one("SELECT * FROM polls WHERE day=? AND game IS NULL", d)
     if not p:
         idx = datetime.now(MSK).date().toordinal() % len(C.POLL_POOL)
@@ -737,79 +811,96 @@ async def poll_create(body: PollIn, me=Me):
     return {"id": pid}
 
 
-# ── Лерадл: угадай героя дня ─────────────────────────────────────────────
+# ── Лерадл: угадай персонажа дня (для каждой игры свой) ──────────────────
 
 LERADLE_MAX = 6
 
 
-def leradle_answer(day: str) -> tuple:
-    idx = int(hashlib.sha256(f"lera:{day}".encode()).hexdigest(), 16) % len(C.HEROES)
-    return C.HEROES[idx]
+def ldl_game(game: str) -> str:
+    return game if game in C.LERADLE_GAMES else "hok"
 
 
-def leradle_feedback(guess: tuple, ans: tuple) -> dict:
+def ldl_pool(game: str) -> list:
+    return C.GAMES[ldl_game(game)]["heroes"]
+
+
+def leradle_answer(day: str, game: str = "hok") -> tuple:
+    pool = ldl_pool(game)
+    seed = f"lera:{day}" if game == "hok" else f"lera:{game}:{day}"   # HoK — как раньше, чтобы не сбить сегодняшний ответ
+    return pool[int(hashlib.sha256(seed.encode()).hexdigest(), 16) % len(pool)]
+
+
+def leradle_feedback(guess: tuple, ans: tuple, game: str) -> dict:
+    roles = C.GAMES[ldl_game(game)]["roles"]
     gl, al = len(guess[0].replace(" ", "")), len(ans[0].replace(" ", ""))
     gf, af = guess[0][0].upper(), ans[0][0].upper()
     return {"name": guess[0], "cls": guess[1], "cls_ok": guess[1] == ans[1],
-            "lane": C.ROLES[guess[2]], "lane_ok": guess[2] == ans[2],
+            "lane": roles.get(guess[2], "—"), "lane_ok": guess[2] == ans[2],
             "len": gl, "len_hint": "eq" if gl == al else ("up" if al > gl else "down"),
             "letter": gf, "letter_hint": "eq" if gf == af else ("up" if af > gf else "down"),
             "win": guess[0] == ans[0]}
 
 
-async def leradle_state(uid: int) -> dict:
+async def leradle_row(uid: int, d: str, game: str) -> dict | None:
+    return await db.one("SELECT * FROM leradle2 WHERE tg_id=? AND day=? AND game=?", uid, d, game)
+
+
+async def leradle_state(uid: int, game: str = "hok") -> dict:
+    game = ldl_game(game)
     d = today()
-    row = await db.one("SELECT * FROM leradle WHERE tg_id=? AND day=?", uid, d) or {"guesses": "[]", "solved": 0}
-    ans = leradle_answer(d)
-    by_name = {h[0]: h for h in C.HEROES}
-    guesses = [leradle_feedback(by_name[n], ans) for n in jl(row["guesses"]) if n in by_name]
+    row = await leradle_row(uid, d, game) or {"guesses": "[]", "solved": 0}
+    ans = leradle_answer(d, game)
+    by_name = {h[0]: h for h in ldl_pool(game)}
+    guesses = [leradle_feedback(by_name[n], ans, game) for n in jl(row["guesses"]) if n in by_name]
     over = bool(row["solved"]) or len(guesses) >= LERADLE_MAX
     u = await db.one("SELECT leradle_streak, last_leradle FROM users WHERE tg_id=?", uid)
     streak = u["leradle_streak"] if u and u["last_leradle"] in (d, yday()) else 0
-    return {"day": d, "max": LERADLE_MAX, "guesses": guesses, "solved": bool(row["solved"]), "over": over,
-            "answer": {"name": ans[0], "cls": ans[1], "lane": C.ROLES[ans[2]]} if over else None,
-            "streak": streak, "names": sorted(by_name)}
+    roles = C.GAMES[game]["roles"]
+    return {"day": d, "game": game, "entity": C.ENTITY.get(game, "Герои"), "max": LERADLE_MAX, "guesses": guesses,
+            "solved": bool(row["solved"]), "over": over,
+            "answer": {"name": ans[0], "cls": ans[1], "lane": roles.get(ans[2], "—")} if over else None,
+            "streak": streak, "names": sorted(by_name), "games": C.LERADLE_GAMES}
 
 
 @router.get("/leradle")
-async def leradle(me=Me):
-    return await leradle_state(me["tg_id"])
+async def leradle(game: str = "hok", me=Me):
+    return await leradle_state(me["tg_id"], game)
 
 
 class GuessIn(BaseModel):
     name: str
+    game: str = "hok"
 
 
 @router.post("/leradle/guess")
 async def leradle_guess(body: GuessIn, me=Me):
-    uid, d = me["tg_id"], today()
-    by_name = {h[0].lower(): h for h in C.HEROES}
+    uid, d, game = me["tg_id"], today(), ldl_game(body.game)
+    by_name = {h[0].lower(): h for h in ldl_pool(game)}
     hero = by_name.get(body.name.strip().lower())
     if not hero:
-        raise HTTPException(400, "Нет такого героя")
-    row = await db.one("SELECT * FROM leradle WHERE tg_id=? AND day=?", uid, d)
+        raise HTTPException(400, "Нет такого варианта")
+    row = await leradle_row(uid, d, game)
     guesses = jl(row["guesses"]) if row else []
     if (row and row["solved"]) or len(guesses) >= LERADLE_MAX:
-        raise HTTPException(409, "На сегодня всё — приходи завтра")
+        raise HTTPException(409, "На сегодня всё — приходи завтра или попробуй другую игру")
     if hero[0] in guesses:
-        raise HTTPException(409, "Этого уже пробовал(а)")
+        raise HTTPException(409, "Это уже было")
     guesses.append(hero[0])
-    win = hero[0] == leradle_answer(d)[0]
-    await db.run("INSERT INTO leradle (tg_id, day, guesses, solved) VALUES (?,?,?,?) "
-                 "ON CONFLICT(tg_id, day) DO UPDATE SET guesses=excluded.guesses, solved=excluded.solved",
-                 uid, d, json.dumps(guesses), int(win))
+    win = hero[0] == leradle_answer(d, game)[0]
+    await db.run("INSERT INTO leradle2 (tg_id, day, game, guesses, solved) VALUES (?,?,?,?,?) "
+                 "ON CONFLICT(tg_id, day, game) DO UPDATE SET guesses=excluded.guesses, solved=excluded.solved",
+                 uid, d, game, json.dumps(guesses), int(win))
     reward = 0
     if win:
         u = await db.one("SELECT leradle_streak, last_leradle FROM users WHERE tg_id=?", uid)
-        streak = (u["leradle_streak"] + 1) if u["last_leradle"] == yday() else 1
+        first_today = u["last_leradle"] != d
+        streak = (u["leradle_streak"] + 1) if u["last_leradle"] == yday() else (u["leradle_streak"] if not first_today else 1)
         await db.run("UPDATE users SET leradle_streak=?, last_leradle=? WHERE tg_id=?", streak, d, uid)
-        reward = 20 + 5 * (LERADLE_MAX - len(guesses)) + 5 * min(streak - 1, 6)
-        await add_balance(uid, reward, "leradle")
+        reward = 20 + 5 * (LERADLE_MAX - len(guesses)) + (5 * min(streak - 1, 6) if first_today else 0)
+        await add_balance(uid, reward, f"leradle:{game}")
         await add_xp(uid, 15)
         await bump_quest(uid, "leradle")
-    elif len(guesses) >= LERADLE_MAX:
-        await db.run("UPDATE users SET leradle_streak=0 WHERE tg_id=?", uid)
-    st = await leradle_state(uid)
+    st = await leradle_state(uid, game)
     return {**st, "reward": reward}
 
 
@@ -878,13 +969,13 @@ async def home(game: str, me=Me):
     uid = me["tg_id"]
     t = await db.all_("SELECT t.*, (SELECT COUNT(*) FROM t_teams x WHERE x.tid=t.id) AS teams FROM tournaments t "
                       "WHERE t.game=? AND t.status IN ('reg','live') ORDER BY t.starts_at LIMIT 3", game)
-    lera = await leradle_state(uid)
+    lera = await leradle_state(uid, game)
     q = await db.all_("SELECT quest_id, progress, claimed FROM quest_progress WHERE tg_id=? AND day=?", uid, today())
     claimable = sum(1 for r in q if r["progress"] >= C.QUESTS.get(r["quest_id"], ("", 99))[1] and not r["claimed"])
     squads = await db.val("SELECT COUNT(*) FROM squads WHERE game=? AND status='open' AND expires_at > datetime('now')", game)
     online = await db.val("SELECT COUNT(*) FROM user_games ug JOIN users u ON u.tg_id=ug.tg_id "
                           "WHERE ug.game=? AND u.last_seen > datetime('now','-5 minutes')", game)
     return {"tournaments": t, "leradle": {"solved": lera["solved"], "over": lera["over"], "tries": len(lera["guesses"]),
-                                         "streak": lera["streak"]},
+                                         "streak": lera["streak"], "game": lera["game"]},
             "quests_ready": claimable, "squads_open": squads, "online": online,
             "ready": await ready_list(game, me), "poll": await poll_today(game, me)}

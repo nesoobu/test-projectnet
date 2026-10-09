@@ -45,6 +45,7 @@ export async function openPerson(pOrId, { onLike, onPass } = {}) {
         <div class="info">
           <div class="row wrap" style="gap:6px;margin-bottom:10px">
             ${p.clan ? html`<span class="tag clan-tag" style="--cc:${p.clan.color}" data-act="clan" data-id="${p.clan.id}">[${p.clan.tag}]</span>` : ""}
+            ${p.trophies ? html`<span class="tag gold">🏆 ${p.trophies}</span>` : ""}
             ${p.online ? html`<span class="tag on-dot">онлайн</span>` : ""}
             ${p.premium ? html`<span class="tag gold">premium</span>` : ""}
             ${p.title ? html`<span class="tag">${p.title}</span>` : ""}

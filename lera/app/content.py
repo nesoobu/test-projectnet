@@ -251,3 +251,56 @@ def clan_level(xp: int) -> dict:
     import math
     lvl = int(math.sqrt(max(xp, 0) / 200)) + 1
     return {"level": lvl, "xp": xp, "from": 200 * (lvl - 1) ** 2, "to": 200 * lvl ** 2, "max_members": min(50, 18 + 2 * lvl)}
+
+
+# ── Персонажи/карты по играм (для вики, мейнов и Лерадла) ─────────────────
+# (имя, класс, ключ роли из GAMES[g]["roles"] или None)
+def _h(names: str, cls: str, role: str | None):
+    return [(n.strip(), cls, role) for n in names.split(",") if n.strip()]
+
+
+GAMES["mlbb"]["heroes"] = (
+    _h("Layla, Miya, Bruno, Clint, Granger, Beatrix, Brody, Claude, Moskov, Wanwan, Karrie, Melissa, Irithel, Lesley, Natan, Popol and Kupa", "Стрелок", "gold")
+    + _h("Eudora, Aurora, Kagura, Lunox, Harith, Valentina, Xavier, Pharsa, Yve, Lylia, Cecilion, Vale, Chang'e, Nana, Zhask", "Маг", "mid")
+    + _h("Saber, Fanny, Gusion, Lancelot, Hayabusa, Ling, Benedetta, Karina, Natalia, Helcurt, Hanzo", "Убийца", "jungle")
+    + _h("Alucard, Zilong, Chou, Paquito, Yu Zhong, X.Borg, Esmeralda, Dyrroth, Martis, Terizla, Thamuz, Fredrinn", "Боец", "exp")
+    + _h("Tigreal, Franco, Khufra, Atlas, Akai, Johnson, Grock, Hylos, Lolita, Minotaur, Uranus, Gloo", "Танк", "roam")
+    + _h("Angela, Estes, Rafaela, Diggie, Mathilda, Floryn, Faramis", "Поддержка", "roam")
+)
+GAMES["dota2"]["heroes"] = (
+    _h("Anti-Mage, Juggernaut, Phantom Assassin, Faceless Void, Spectre, Medusa, Terrorblade, Slark, Luna, Morphling", "Керри", "carry")
+    + _h("Shadow Fiend, Invoker, Storm Spirit, Queen of Pain, Puck, Templar Assassin, Ember Spirit, Lina, Zeus, Sniper", "Мидер", "mid")
+    + _h("Axe, Mars, Tidehunter, Centaur Warrunner, Underlord, Legion Commander, Bristleback, Dark Seer, Timbersaw, Beastmaster", "Оффлейнер", "off")
+    + _h("Earthshaker, Rubick, Pudge, Tusk, Snapfire, Mirana", "Саппорт 4", "sup4")
+    + _h("Crystal Maiden, Lion, Shadow Shaman, Witch Doctor, Io, Dazzle, Lich", "Саппорт 5", "sup5")
+)
+GAMES["valorant"]["heroes"] = (
+    _h("Jett, Reyna, Phoenix, Raze, Yoru, Neon, Iso, Waylay", "Дуэлянт", "duelist")
+    + _h("Sova, Breach, Skye, KAY/O, Fade, Gekko, Tejo", "Инициатор", "initiator")
+    + _h("Brimstone, Viper, Omen, Astra, Harbor, Clove", "Контроллер", "controller")
+    + _h("Sage, Cypher, Killjoy, Chamber, Deadlock, Vyse", "Страж", "sentinel")
+)
+GAMES["brawl"]["heroes"] = (
+    _h("El Primo, Bull, Frank, Rosa, Jacky, Darryl, Ash, Buster", "Танк", "tank")
+    + _h("Shelly, Colt, Rico, 8-Bit, Chester, Lola, Clancy", "Урон", "dd")
+    + _h("Brock, Piper, Bea, Belle, Mandy, Nani", "Снайпер", "dd")
+    + _h("Mortis, Leon, Crow, Edgar, Fang, Stu, Cordelius", "Ассасин", "dd")
+    + _h("Poco, Pam, Gene, Max, Byron, Gus, Berry", "Поддержка", "support")
+    + _h("Gale, Emz, Lou, Squeak, Otis, Dynamike, Barley, Tick, Grom, Sprout", "Контроль", "control")
+)
+GAMES["genshin"]["heroes"] = (
+    _h("Diluc, Hu Tao, Yoimiya, Arlecchino", "Пиро", "dps") + _h("Xiangling", "Пиро", "sub") + _h("Bennett", "Пиро", "healer")
+    + _h("Raiden Shogun, Keqing", "Электро", "dps") + _h("Fischl, Beidou", "Электро", "sub")
+    + _h("Kamisato Ayaka, Ganyu, Wriothesley, Eula", "Крио", "dps") + _h("Qiqi", "Крио", "healer")
+    + _h("Neuvillette, Tartaglia", "Гидро", "dps") + _h("Xingqiu, Yelan, Furina", "Гидро", "sub") + _h("Sangonomiya Kokomi, Barbara", "Гидро", "healer")
+    + _h("Alhaitham", "Дендро", "dps") + _h("Nahida", "Дендро", "sub") + _h("Baizhu", "Дендро", "healer")
+    + _h("Kaedehara Kazuha, Venti, Sucrose", "Анемо", "support") + _h("Jean", "Анемо", "healer")
+    + _h("Navia", "Гео", "dps") + _h("Zhongli", "Гео", "support")
+)
+GAMES["cs2"]["heroes"] = _h("Mirage, Inferno, Nuke, Ancient, Anubis, Dust II, Train, Vertigo, Overpass", "Карта", None)
+GAMES["pubgm"]["heroes"] = _h("Erangel, Miramar, Sanhok, Vikendi, Livik", "Карта", None)
+
+# как называть сущности в вики и Лерадле
+ENTITY = {"hok": "Герои", "mlbb": "Герои", "dota2": "Герои", "valorant": "Агенты", "brawl": "Бойцы",
+          "genshin": "Персонажи", "cs2": "Карты", "pubgm": "Карты"}
+LERADLE_GAMES = [g for g in ("hok", "mlbb", "dota2", "valorant", "brawl", "genshin")]

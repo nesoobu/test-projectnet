@@ -1,5 +1,5 @@
 // Квесты, гача, магазин, инвентарь, топ, вики, premium, рефералка, помощь, админка
-import { S, tg, api, html, raw, mount, on, icon, avatar, nameEl, refreshMe, pushScreen, sheet, toast, fail, haptic, leraSays, rankName, emit, GI, myGame, gameBadge, confirmSheet, plural } from "../core.js";
+import { rt, S, tg, api, html, raw, mount, on, icon, avatar, nameEl, refreshMe, pushScreen, sheet, toast, fail, haptic, leraSays, rankName, emit, GI, myGame, gameBadge, confirmSheet, plural } from "../core.js";
 import { openPerson } from "./person.js";
 
 const RAR = { common: "обычный", rare: "редкий", epic: "эпик", legendary: "легенда" };
@@ -196,6 +196,9 @@ export function openTop() {
 
 // ─── вики ───
 const CLS_COLOR = { "Стрелок": "#ffc64a", "Маг": "#b48cff", "Убийца": "#ff6fa5", "Боец": "#ff7a59", "Танк": "#7cc8ff", "Поддержка": "#5ef0c1" };
+const PALETTE = ["#ffc64a", "#b48cff", "#ff6fa5", "#ff7a59", "#7cc8ff", "#5ef0c1", "#d4ff3f", "#ff9f43", "#9ad0ff"];
+const clsColor = (c) => CLS_COLOR[c] || PALETTE[[...(c || "")].reduce((a, ch) => a + ch.charCodeAt(0), 0) % PALETTE.length];
+const glyph = (n) => (n.match(/[A-Za-zА-Яа-яЁё0-9]/g) || ["?"]).slice(0, 2).join("");
 const wikiCache = {};
 async function wikiData(game, fresh = false) {
   if (fresh || !wikiCache[game]) wikiCache[game] = await api(`/api/wiki?game=${game}`);
@@ -206,10 +209,11 @@ export function openWiki() {
   const game = S.game, g = GI(game);
   screen(`вики ${g.short.toLowerCase()}`, `// ${g.name}`, (b) => {
     let tab = g.heroes ? "heroes" : "guides", q = "", cls = "", data = null;
+    const ent = S.dict.entity?.[game] || "Герои", isMap = ent === "Карты";
     const draw = () => {
       if (!data) return mount(b, html`<div class="spinner"></div>`);
       const seg = g.heroes ? html`<div class="pad" style="margin-bottom:12px"><div class="seg">
-        <button class="${tab === "heroes" ? "on" : ""}" data-act="tab" data-t="heroes">Герои</button>
+        <button class="${tab === "heroes" ? "on" : ""}" data-act="tab" data-t="heroes">${ent}</button>
         <button class="${tab === "guides" ? "on" : ""}" data-act="tab" data-t="guides">Гайды · ${data.guides.length}</button></div></div>` : "";
       if (tab === "guides") {
         return mount(b, html`${seg}<div class="pad"><button class="btn wide" data-act="write">${icon("edit")}написать гайд</button></div>
@@ -220,14 +224,15 @@ export function openWiki() {
             : html`<div class="empty">${leraSays(`Гайдов по ${g.short} ещё нет. Напиши первый — за опубликованный гайд дам 100 несо.`)}</div>`}<div class="sp"></div>`);
       }
       const mains = myGame(game)?.heroes || [];
+      const classes = [...new Set(data.heroes.map((h) => h.cls))];
       const f = data.heroes.filter((h) => (!cls || h.cls === cls) && (!q || h.name.toLowerCase().includes(q)));
-      mount(b, html`${seg}<div class="pad"><input class="input" id="q" placeholder="Найти героя…" autocomplete="off" value="${q}">
-        <div class="chips scroll" style="margin-top:12px"><button class="chip ${!cls ? "on" : ""}" data-act="cls" data-v="">Все</button>
-        ${Object.keys(CLS_COLOR).map((c) => html`<button class="chip ${cls === c ? "on" : ""}" data-act="cls" data-v="${c}">${c}</button>`)}</div></div>
+      mount(b, html`${seg}<div class="pad"><input class="input" id="q" placeholder="${isMap ? "Найти карту…" : "Поиск…"}" autocomplete="off" value="${q}">
+        ${classes.length > 1 ? html`<div class="chips scroll" style="margin-top:12px"><button class="chip ${!cls ? "on" : ""}" data-act="cls" data-v="">Все</button>
+        ${classes.map((c) => html`<button class="chip ${cls === c ? "on" : ""}" data-act="cls" data-v="${c}">${c}</button>`)}</div>` : ""}</div>
         <div class="pad">${f.length ? html`<div class="list" style="margin-top:8px">${f.map((h) => html`<div class="hero-row">
-          <div class="hero-glyph" style="background:${CLS_COLOR[h.cls] || "var(--game)"}">${h.name.replace(/[^A-Za-z]/g, "").slice(0, 2)}</div>
-          <div class="grow"><b>${h.name}</b><div class="small muted">${h.cls} · ${h.lane_name}${h.mains ? html` · <span style="color:var(--acc)">мейнят ${h.mains}</span>` : ""}</div></div>
-          <button class="chip ${mains.includes(h.name) ? "on" : ""}" data-act="main" data-v="${h.name}">${mains.includes(h.name) ? "мейн ✓" : "мейн"}</button></div>`)}</div><div class="sp"></div>`
+          <div class="hero-glyph" style="background:${clsColor(h.cls)}">${glyph(h.name)}</div>
+          <div class="grow"><b>${h.name}</b><div class="small muted">${h.cls}${h.lane_name ? ` · ${h.lane_name}` : ""}${h.mains ? html` · <span style="color:var(--acc)">${isMap ? "любят" : "мейнят"} ${h.mains}</span>` : ""}</div></div>
+          <button class="chip ${mains.includes(h.name) ? "on" : ""}" data-act="main" data-v="${h.name}">${mains.includes(h.name) ? (isMap ? "люблю ✓" : "мейн ✓") : (isMap ? "люблю" : "мейн")}</button></div>`)}</div><div class="sp"></div>`
         : html`<p class="muted center" style="padding:30px">Никого не нашла</p>`}</div>`);
       const qi = b.querySelector("#q");
       qi.addEventListener("input", (e) => { q = e.target.value.trim().toLowerCase(); const pos = qi.selectionStart; draw(); const n = b.querySelector("#q"); n.focus(); n.setSelectionRange(pos, pos); });
@@ -366,7 +371,8 @@ export function openTournament(id, onChange) {
       const rname = (r) => r === t.rounds ? "финал" : r === t.rounds - 1 ? "полуфинал" : `раунд ${r}`;
       return html`<div class="kicker pad" style="margin:22px 0 10px">сетка</div><div class="bracket">${rounds.map((ms, i) => html`
         <div class="b-round"><div class="kicker" style="margin-bottom:8px">${rname(i + 1)}</div>${ms.map((m) => html`
-          <div class="b-match ${m.winner ? "done" : ""}">
+          <div class="b-match ${m.winner ? "done" : ""} ${m.disputed && !m.winner ? "disputed" : ""}">
+            ${m.score || (m.disputed && !m.winner) ? html`<div class="b-score mono">${m.disputed && !m.winner ? "⚖️ спор" : m.score}</div>` : ""}
             ${[m.team_a, m.team_b].map((tm) => html`<button class="b-team ${m.winner && m.winner === tm ? "win" : ""} ${tm && tm === t.my_team ? "mine" : ""}"
               ${S.me.is_admin && t.status === "live" && !m.winner && m.team_a && m.team_b ? raw(`data-act="win" data-m="${m.id}" data-t="${tm}"`) : ""}>
               <span class="ell">${tm ? teamName(tm) : i === 0 ? "—" : "…"}</span>${m.winner && m.winner === tm ? icon("check", 'width="14" height="14"') : ""}</button>`)}
@@ -374,6 +380,33 @@ export function openTournament(id, onChange) {
           </div>`)}</div>`)}</div>
         ${t.status === "live" ? html`<p class="pad muted small">🔮 Прогнозы: ставь несо на победителя матча. Проигравшие ставки делятся между угадавшими.</p>` : ""}
         ${S.me.is_admin && t.status === "live" ? html`<p class="pad muted small">Админ: тапни по команде в матче, чтобы отметить победителя.</p>` : ""}`;
+    }
+    function myMatch() {
+      if (t.status !== "live" || !t.my_team) return "";
+      const m = t.matches.find((x) => !x.winner && x.team_a && x.team_b && (x.team_a === t.my_team || x.team_b === t.my_team));
+      if (!m) {
+        const out = t.matches.some((x) => x.winner && x.winner !== t.my_team && (x.team_a === t.my_team || x.team_b === t.my_team));
+        return html`<div class="card line" style="margin-top:12px"><div class="kicker">${out ? "ты выбыл" : "ждём соперника"}</div>
+          <p class="small muted" style="margin:6px 0 0">${out ? "Можно смотреть сетку и ставить прогнозы на другие матчи." : "Следующий соперник определится, когда закончится параллельный матч. Я напишу."}</p></div>`;
+      }
+      const me = m.team_a === t.my_team ? "a" : "b", opp = me === "a" ? m.team_b : m.team_a;
+      const mine = m[`report_${me}`], theirs = m[`report_${me === "a" ? "b" : "a"}`];
+      let state = "";
+      if (m.disputed) state = html`<p class="small" style="margin:10px 0 0;color:var(--hot)">⚖️ Результаты не совпали — матч решит админ. Скрины кидай в чат турнира.</p>`;
+      else if (mine) state = html`<p class="small muted" style="margin:10px 0 0">Ты отметил победу: <b>${teamName(mine)}</b>. Ждём подтверждения соперника — через 30 минут засчитается само.</p>`;
+      else if (theirs) state = html`<p class="small" style="margin:10px 0 0">Соперник заявил: победил <b>${teamName(theirs)}</b>.</p>
+        ${t.my_captain ? html`<div class="row" style="margin-top:10px;gap:8px"><button class="btn sm grow" data-act="confirm" data-m="${m.id}" data-t="${theirs}">${icon("check")}подтвердить</button>
+          <button class="btn sm hot grow" data-act="report" data-m="${m.id}">оспорить</button></div>` : ""}`;
+      return html`<div class="card my-match" style="margin-top:12px">
+        <div class="kicker">твой матч · Bo${t.best_of}</div>
+        <div class="vs"><b class="ell">${teamName(t.my_team)}</b><span>vs</span><b class="ell">${teamName(opp)}</b></div>
+        <div class="lobby ${m.lobby ? "" : "empty"}">${m.lobby ? html`<span class="kicker">лобби</span><code class="grow">${m.lobby}</code><button class="ibtn" data-act="copy" data-v="${m.lobby}">${icon("copy")}</button>`
+          : html`<span class="small muted grow">Код лобби пока не задан</span>`}
+          ${t.my_captain || S.me.is_admin ? html`<button class="tag" data-act="lobby" data-m="${m.id}">${m.lobby ? "сменить" : "задать"}</button>` : ""}</div>
+        ${state}
+        ${t.my_captain && !mine && !theirs && !m.disputed ? html`<button class="btn wide" style="margin-top:12px" data-act="report" data-m="${m.id}">${icon("flag")}отправить результат</button>` : ""}
+        ${!t.my_captain && !m.disputed && !mine && !theirs ? html`<p class="small muted" style="margin:10px 0 0">Результат отправляет капитан команды.</p>` : ""}
+      </div>`;
     }
     function draw() {
       const g = GI(t.game), d = new Date(t.starts_at.replace(" ", "T") + "Z");
@@ -390,29 +423,81 @@ export function openTournament(id, onChange) {
               <span class="tag">${d.toLocaleString("ru", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</span>
               <span class="tag">${t.team_size === 1 ? "соло" : `команды ${t.team_size}×${t.team_size}`}</span>
               <span class="tag">${t.teams.length}/${t.max_teams}</span>
-              ${t.prize ? html`<span class="tag gold">приз ${t.prize} несо</span>` : ""}</div>
+              <span class="tag">Bo${t.best_of}</span>
+              ${t.entry_fee ? html`<span class="tag">взнос ${t.entry_fee}</span>` : ""}
+              ${t.checkin ? html`<span class="tag">чек-ин</span>` : ""}</div>
+            ${t.pool ? html`<div class="pool"><div><span class="kicker" style="color:inherit;opacity:.7">призовой фонд</span><b class="coin">${t.pool}</b></div>
+              <div class="places">${t.payouts.map((v, i) => v ? html`<span>${["🥇", "🥈"][i]} ${v}</span>` : "")}</div></div>` : ""}
           </div>
           ${winner ? html`<div class="card" style="margin-top:12px;text-align:center"><div class="kicker">чемпион</div><div class="h2" style="margin-top:6px">🏆 ${winner.name}</div></div>` : ""}
+          ${myMatch()}
+          ${t.my_team || S.me.is_admin ? html`<button class="btn dark wide" style="margin-top:12px" data-act="chat">${icon("chat")}чат турнира</button>` : ""}
           ${t.about ? html`<p style="white-space:pre-wrap;margin:16px 0 0">${t.about}</p>` : ""}
+          ${t.rules ? html`<details class="faq" style="margin-top:12px"><summary>Правила</summary><p style="white-space:pre-wrap">${t.rules}</p></details>` : ""}
           <div class="sp"></div>
           ${t.status === "reg" ? (myTeam
             ? html`<div class="card line"><div class="kicker">ты в ${t.team_size === 1 ? "списке" : "команде"}</div><b style="display:block;margin:6px 0 12px">${myTeam.name}</b>
+                ${t.checkin ? (myTeam.checked_in ? html`<div class="tag acc" style="margin-bottom:12px">✓ чек-ин пройден</div>`
+                  : t.checkin_open ? html`<button class="btn wide" style="margin-bottom:10px" data-act="checkin">${icon("check")}я на месте — чек-ин</button>`
+                  : html`<p class="small muted" style="margin:0 0 12px">⏰ За 30 минут до старта откроется чек-ин. Не отметишься — снимут с турнира${t.entry_fee ? ", взнос вернётся" : ""}.</p>`) : ""}
                 ${t.team_size > 1 ? html`<p class="small muted" style="margin:0 0 12px">Позови тиммейтов: им нужно открыть турнир и нажать «вступить» у твоей команды.</p>` : ""}
                 <button class="btn ghost wide sm" data-act="leave">выйти из турнира</button></div>`
             : full ? html`<button class="btn wide" disabled>мест нет</button>`
-              : html`<button class="btn wide" data-act="reg">${icon("swords")}${t.team_size === 1 ? "участвовать" : "создать команду"}</button>`) : ""}
+              : html`<button class="btn wide" data-act="reg">${icon("swords")}${t.team_size === 1 ? "участвовать" : "создать команду"}${t.entry_fee ? ` · ${t.entry_fee} несо` : ""}</button>`) : ""}
           ${S.me.is_admin && t.status === "reg" ? html`<div class="row" style="margin-top:10px"><button class="btn dark grow" data-act="start">запустить сетку</button>
             <button class="btn ghost" data-act="cancel">${icon("trash")}</button></div>` : ""}
         </div>
         ${bracket()}
         <div class="kicker pad" style="margin:22px 0 4px">участники · ${t.teams.length}</div>
         <div class="pad"><div class="list">${t.teams.map((tm) => html`<div class="li" style="align-items:flex-start">
-          <div class="grow"><b>${tm.name}</b><div class="row wrap" style="gap:6px;margin-top:8px">${tm.members.map((m) => html`<button data-act="who" data-id="${m.tg_id}" class="row" style="gap:6px">${avatar(m, 26)}<span class="small">${m.name}</span></button>`)}</div></div>
+          <div class="grow"><b>${tm.name}</b>${t.checkin && t.status === "reg" && tm.checked_in ? html` <span class="tag acc" style="margin-left:6px">✓</span>` : ""}<div class="row wrap" style="gap:6px;margin-top:8px">${tm.members.map((m) => html`<button data-act="who" data-id="${m.tg_id}" class="row" style="gap:6px">${avatar(m, 26)}<span class="small">${m.name}</span></button>`)}</div></div>
           ${t.status === "reg" && t.team_size > 1 && !t.my_team && tm.members.length < t.team_size ? html`<button class="btn sm" data-act="join" data-id="${tm.id}">вступить</button>` : ""}
           ${t.team_size > 1 ? html`<span class="tag">${tm.members.length}/${t.team_size}</span>` : ""}</div>`)}</div></div><div class="sp"></div>`);
     }
     load();
-    return on(el, {
+    const offRt = rt.on("tour", (ev) => { if (ev.tid === id) load(); });
+    const act = async (path, body, msg) => {
+      try { const r = await api(`/api/tournaments/${id}${path}`, { method: "POST", body }); haptic.ok(); if (msg) toast(typeof msg === "function" ? msg(r) : msg, "ok"); load(); return r; } catch (e) { fail(e); }
+    };
+    const offAct = on(el, {
+      checkin: () => act("/checkin", {}, "Чек-ин пройден!"),
+      copy: (b) => { navigator.clipboard?.writeText(b.dataset.v).then(() => toast("Скопировано", "ok")); },
+      chat: () => openTourChat(id, t.title),
+      confirm: async (b) => {
+        if (!(await confirmSheet(`Победил ${teamName(+b.dataset.t)}?`, "Матч закроется, сетка пойдёт дальше.", "подтвердить"))) return;
+        act(`/matches/${b.dataset.m}/report`, { team: +b.dataset.t }, "Результат засчитан");
+      },
+      lobby: (b) => sheet((sh, close) => {
+        mount(sh, html`<h2 class="h2" style="margin-bottom:6px">код лобби</h2><p class="small muted" style="margin:0 0 14px">Номер комнаты, пароль или ник хоста — что нужно сопернику, чтобы зайти.</p>
+          <input class="input" id="lc" maxlength="80" placeholder="Например, 4821 / пароль lera"><button class="btn wide" style="margin-top:14px" data-act="ok">отправить обеим командам</button>`);
+        on(sh, { ok: () => { const v = sh.querySelector("#lc").value.trim(); if (!v) return; close(); act(`/matches/${b.dataset.m}/lobby`, { code: v }, "Лобби отправлено"); } });
+      }),
+      report: (b) => {
+        const m = t.matches.find((x) => x.id === +b.dataset.m);
+        let team = null;
+        const scores = t.best_of === 1 ? [] : t.best_of === 3 ? ["2:0", "2:1"] : ["3:0", "3:1", "3:2"];
+        let score = scores[0] || "";
+        sheet((sh, close) => {
+          const d2 = () => mount(sh, html`<h2 class="h2" style="margin-bottom:6px">кто победил?</h2>
+            <p class="small muted" style="margin:0 0 14px">Если соперник отметит то же — матч закроется сразу. Не совпадёт — решит админ.</p>
+            <div class="stack">${[m.team_a, m.team_b].map((x) => html`<button class="btn wide ${team === x ? "" : "dark"}" data-act="tm" data-v="${x}">${teamName(x)}</button>`)}</div>
+            ${scores.length ? html`<div class="field" style="margin-top:16px"><span class="lbl">счёт по картам</span><div class="seg">${scores.map((v) => html`<button class="${score === v ? "on" : ""}" data-act="sc" data-v="${v}">${v}</button>`)}</div></div>` : ""}
+            <div class="field" style="margin-top:12px"><label>ссылка на скрин (необязательно)</label><input class="input" id="pf" maxlength="300" placeholder="https://…"></div>
+            <button class="btn wide" data-act="ok" ${team ? "" : "disabled"}>${icon("send")}отправить</button>`);
+          d2();
+          on(sh, {
+            tm: (x) => { team = +x.dataset.v; haptic.sel(); d2(); },
+            sc: (x) => { score = x.dataset.v; haptic.sel(); d2(); },
+            ok: async () => {
+              const proof = sh.querySelector("#pf").value.trim();
+              close();
+              act(`/matches/${m.id}/report`, { team, score, proof }, (r) => ({ done: "Матч закрыт", waiting: "Ждём подтверждения соперника", disputed: "Не совпало — передала админу" })[r.status]);
+            },
+          });
+        });
+      },
+    });
+    const offMain = on(el, {
       back: pop,
       who: (b) => openPerson(+b.dataset.id),
       share: () => {
@@ -453,11 +538,14 @@ export function openTournament(id, onChange) {
         });
       },
       win: async (b) => {
+        const m = t.matches.find((x) => x.id === +b.dataset.m);
         const name = teamName(+b.dataset.t);
-        if (!(await confirmSheet(`Победа: ${name}?`, "Отменить нельзя.", "да"))) return;
-        try { await api(`/api/tournaments/${id}/matches/${b.dataset.m}/winner`, { method: "POST", body: { team: +b.dataset.t } }); haptic.ok(); load(); } catch (e) { fail(e); }
+        const rep = m.report_a || m.report_b ? `Капитаны: ${m.report_a ? teamName(m.report_a) : "—"} / ${m.report_b ? teamName(m.report_b) : "—"}. ` : "";
+        if (!(await confirmSheet(`Победа: ${name}?`, `${rep}${m.proof ? `Пруф: ${m.proof}. ` : ""}Отменить нельзя.`, "да"))) return;
+        try { await api(`/api/tournaments/${id}/matches/${b.dataset.m}/winner`, { method: "POST", body: { team: +b.dataset.t, score: m.score || "" } }); haptic.ok(); load(); } catch (e) { fail(e); }
       },
     });
+    return () => { offMain(); offRt(); offAct(); };
     async function doReg(team_name) {
       try { await api(`/api/tournaments/${id}/register`, { method: "POST", body: { team_name } }); haptic.ok(); toast("Ты в турнире!", "ok"); load(); onChange?.(); }
       catch (e) { fail(e); }
@@ -465,22 +553,45 @@ export function openTournament(id, onChange) {
   });
 }
 
+export function openTourChat(id, title) {
+  pushScreen((el, pop) => {
+    let stop = () => {};
+    import("./chats.js").then(({ chatRoom }) => {
+      stop = chatRoom(el, {
+        head: () => html`<div class="grow"><b class="ell" style="display:block">${title}</b><span class="small muted">чат турнира · участники и орг</span></div>`,
+        load: async (after) => ({ messages: (await api(`/api/tournaments/${id}/chat?after=${after}`)).messages }),
+        send: (text) => api(`/api/tournaments/${id}/chat`, { method: "POST", body: { text } }),
+        empty: () => leraSays("Здесь договариваются о времени, кидают коды лобби и скрины результатов. Орг тоже тут."),
+        back: pop, key: `t${id}`, group: true,
+      });
+    });
+    return () => stop();
+  }, { flex: true });
+}
+
 function tourCreate(done) {
   const g = GI();
-  const st = { team_size: 1, max_teams: 8 };
+  const st = { team_size: 1, max_teams: 8, best_of: 1, split: "70/30", checkin: true, auto_start: true };
   sheet((el, close) => {
     const dflt = new Date(Date.now() + 2 * 864e5); dflt.setHours(19, 0, 0, 0);
     const iso = new Date(dflt - dflt.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
     const draw = () => {
       const keep = (id) => el.querySelector(id)?.value;
-      const v = { t: keep("#tt") ?? "", a: keep("#ta") ?? "", p: keep("#tp") ?? "500", d: keep("#td") ?? iso };
+      const v = { t: keep("#tt") ?? "", a: keep("#ta") ?? "", p: keep("#tp") ?? "500", d: keep("#td") ?? iso, f: keep("#tf") ?? "0", r: keep("#tr") ?? "" };
       mount(el, html`<div class="row" style="margin-bottom:16px"><h2 class="h2 grow">новый турнир</h2>${gameBadge(S.game)}</div>
         <div class="field"><label>название</label><input class="input" id="tt" maxlength="60" value="${v.t}" placeholder="Кубок Леры #1"></div>
         <div class="field"><span class="lbl">формат</span><div class="seg">${[1, 2, 3, 5].map((n) => html`<button class="${st.team_size === n ? "on" : ""}" data-act="ts" data-v="${n}">${n === 1 ? "соло" : `${n}×${n}`}</button>`)}</div></div>
         <div class="field"><span class="lbl">участников (команд)</span><div class="seg">${[4, 8, 16, 32].map((n) => html`<button class="${st.max_teams === n ? "on" : ""}" data-act="mt" data-v="${n}">${n}</button>`)}</div></div>
-        <div class="row" style="gap:10px"><div class="field grow"><label>старт (мск)</label><input class="input" id="td" type="datetime-local" value="${v.d}"></div>
-          <div class="field" style="width:120px"><label>приз, несо</label><input class="input" id="tp" type="number" inputmode="numeric" value="${v.p}"></div></div>
-        <div class="field"><label>правила / описание</label><textarea class="input" id="ta" maxlength="1000" placeholder="Режим, карта, как связаться с админом…">${v.a}</textarea></div>
+        <div class="field"><span class="lbl">матчи</span><div class="seg">${[1, 3, 5].map((n) => html`<button class="${st.best_of === n ? "on" : ""}" data-act="bo" data-v="${n}">Bo${n}</button>`)}</div></div>
+        <div class="field"><label>старт (мск)</label><input class="input" id="td" type="datetime-local" value="${v.d}"></div>
+        <div class="row" style="gap:10px"><div class="field grow"><label>приз от Леры, несо</label><input class="input" id="tp" type="number" inputmode="numeric" value="${v.p}"></div>
+          <div class="field grow"><label>взнос, несо</label><input class="input" id="tf" type="number" inputmode="numeric" value="${v.f}"></div></div>
+        <div class="field"><span class="lbl">делёж фонда (приз + взносы)</span><div class="seg">${["100", "70/30", "60/40"].map((x) => html`<button class="${st.split === x ? "on" : ""}" data-act="sp" data-v="${x}">${x === "100" ? "всё 1-му" : x}</button>`)}</div></div>
+        <div class="stack" style="gap:8px;margin-bottom:14px">
+          <button class="toggle-row ${st.checkin ? "on" : ""}" data-act="tg" data-k="checkin"><span class="grow">Чек-ин за 30 мин до старта</span><i class="sw ${st.checkin ? "on" : ""}"></i></button>
+          <button class="toggle-row ${st.auto_start ? "on" : ""}" data-act="tg" data-k="auto_start"><span class="grow">Автостарт сетки по времени</span><i class="sw ${st.auto_start ? "on" : ""}"></i></button></div>
+        <div class="field"><label>описание</label><textarea class="input" id="ta" maxlength="1000" placeholder="Режим, карта, формат стрима…">${v.a}</textarea></div>
+        <div class="field"><label>правила</label><textarea class="input" id="tr" maxlength="2000" placeholder="Опоздание 10 минут — тех. поражение. Скрин результата в чат турнира…">${v.r}</textarea></div>
         <button class="btn wide" data-act="go">${icon("swords")}открыть регистрацию</button>
         <p class="muted small" style="margin:10px 0 0">Анонс автоматически появится в ленте ${g.short}.</p>`);
     };
@@ -488,9 +599,14 @@ function tourCreate(done) {
     on(el, {
       ts: (b) => { st.team_size = +b.dataset.v; draw(); },
       mt: (b) => { st.max_teams = +b.dataset.v; draw(); },
+      bo: (b) => { st.best_of = +b.dataset.v; draw(); },
+      sp: (b) => { st.split = b.dataset.v; draw(); },
+      tg: (b) => { st[b.dataset.k] = !st[b.dataset.k]; draw(); },
       go: async () => {
         const body = { game: S.game, title: el.querySelector("#tt").value.trim(), about: el.querySelector("#ta").value.trim(),
-          team_size: st.team_size, max_teams: st.max_teams, prize: +el.querySelector("#tp").value || 0, starts_at: el.querySelector("#td").value };
+          team_size: st.team_size, max_teams: st.max_teams, prize: +el.querySelector("#tp").value || 0, starts_at: el.querySelector("#td").value,
+          best_of: st.best_of, entry_fee: +el.querySelector("#tf").value || 0, checkin: st.checkin, auto_start: st.auto_start,
+          prize_split: st.split.split("/").map(Number), rules: el.querySelector("#tr").value.trim() };
         if (body.title.length < 3) return toast("Нужно название", "err");
         try { const r = await api("/api/tournaments", { method: "POST", body }); haptic.ok(); close(); done?.(); openTournament(r.id, done); } catch (e) { fail(e); }
       },
@@ -499,28 +615,33 @@ function tourCreate(done) {
 }
 
 // ─── Лерадл ───
-export function openLeradle(onDone) {
-  screen("лерадл", "// угадай героя hok дня", (b) => {
+const ENT1 = { "Герои": ["героя", "Имя героя…"], "Агенты": ["агента", "Имя агента…"], "Бойцы": ["бойца", "Имя бойца…"], "Персонажи": ["персонажа", "Имя персонажа…"] };
+export function openLeradle(onDone, game0) {
+  screen("лерадл", "// угадай по подсказкам", (b) => {
     let st = null, q = "";
+    let game = game0 || ((S.dict.leradle_games || ["hok"]).includes(S.game) ? S.game : "hok");
     const H = { up: "↑", down: "↓", eq: "=" };
     const draw = () => {
       if (!st) return mount(b, html`<div class="spinner"></div>`);
       const used = new Set(st.guesses.map((x) => x.name));
+      const [who, ph] = ENT1[st.entity] || ENT1["Герои"];
+      const gs = st.games || [];
       const sugg = q ? st.names.filter((n) => n.toLowerCase().includes(q) && !used.has(n)).slice(0, 8) : [];
       mount(b, html`<div class="pad">
-        ${!st.over ? html`<p class="muted small" style="margin:0 0 12px">Вводи героев Honor of Kings. После каждой попытки — подсказки: класс, линия, длина имени и первая буква. ${st.max} попыток.</p>
-          <input class="input" id="lq" placeholder="Имя героя…" autocomplete="off" value="${q}">
+        ${gs.length > 1 ? html`<div class="chips scroll" style="margin-bottom:14px">${gs.map((x) => html`<button class="chip ${x === st.game ? "on" : ""}" data-act="g" data-v="${x}" style="${x === st.game ? `--acc:${GI(x).color}` : ""}">${GI(x).short}</button>`)}</div>` : ""}
+        ${!st.over ? html`<p class="muted small" style="margin:0 0 12px">Угадай ${who} ${GI(st.game).name} дня. После каждой попытки — подсказки: тип, роль, длина имени и первая буква. ${st.max} попыток. У каждой игры своя загадка.</p>
+          <input class="input" id="lq" placeholder="${ph}" autocomplete="off" value="${q}">
           ${sugg.length ? html`<div class="chips" style="margin-top:10px">${sugg.map((n) => html`<button class="chip" data-act="guess" data-v="${n}">${n}</button>`)}</div>` : ""}`
         : html`<div class="card center" style="border:2px solid ${st.solved ? "var(--acc)" : "var(--hot)"}">
             <div class="kicker">${st.solved ? "разгадано" : "не вышло"} · стрик ${st.streak}</div>
             <div class="h2" style="margin:10px 0 4px">${st.answer.name}</div><div class="small muted">${st.answer.cls} · ${st.answer.lane}</div>
             <div class="row" style="margin-top:14px;justify-content:center"><button class="btn sm" data-act="share">${icon("share")}поделиться</button></div></div>`}
-        <div class="ldl-head"><span>герой</span><span>класс</span><span>линия</span><span>букв</span><span>буква</span></div>
+        <div class="ldl-head"><span>${who.replace(/а$|я$/, "")}</span><span>тип</span><span>роль</span><span>букв</span><span>буква</span></div>
         <div class="stack" style="margin-top:6px">${[...st.guesses].reverse().map((x) => html`<div class="ldl-row ${x.win ? "win" : ""}">
           <b class="ell">${x.name}</b><span class="${x.cls_ok ? "ok" : "no"}">${x.cls}</span><span class="${x.lane_ok ? "ok" : "no"}">${x.lane}</span>
           <span class="${x.len_hint === "eq" ? "ok" : "no"}">${x.len} ${H[x.len_hint]}</span><span class="${x.letter_hint === "eq" ? "ok" : "no"}">${x.letter} ${H[x.letter_hint]}</span></div>`)}</div>
         ${!st.over ? html`<div class="center muted small mono" style="margin-top:14px">попыток осталось: ${st.max - st.guesses.length}</div>` : ""}
-        <div class="sp"></div>${leraSays("↑ — у загаданного героя длиннее имя или буква дальше по алфавиту. Новый герой каждый день в полночь по мск.")}<div class="sp"></div></div>`);
+        <div class="sp"></div>${leraSays(`↑ — у загаданного ${who} длиннее имя или буква дальше по алфавиту. Новая загадка каждый день в полночь по мск.`)}<div class="sp"></div></div>`);
       const inp = b.querySelector("#lq");
       if (inp) {
         inp.addEventListener("input", (e) => { q = e.target.value.trim().toLowerCase(); draw(); const n = b.querySelector("#lq"); n.focus(); n.setSelectionRange(n.value.length, n.value.length); });
@@ -529,20 +650,21 @@ export function openLeradle(onDone) {
     };
     async function guess(name) {
       try {
-        st = await api("/api/leradle/guess", { method: "POST", body: { name } });
+        st = await api("/api/leradle/guess", { method: "POST", body: { name, game } });
         q = "";
         if (st.reward) { haptic.ok(); toast(`Угадал! +${st.reward} несо`, "ok"); refreshMe(); }
         else if (st.over) haptic.err(); else haptic.tap();
         draw(); onDone?.();
       } catch (e) { fail(e); }
     }
-    api("/api/leradle").then((r) => { st = r; draw(); }).catch(fail);
-    draw();
+    const load = () => api(`/api/leradle?game=${game}`).then((r) => { st = r; game = r.game; draw(); }).catch(fail);
+    load(); draw();
     return on(b, {
+      g: (x) => { game = x.dataset.v; st = null; q = ""; haptic.sel(); draw(); load(); },
       guess: (x) => guess(x.dataset.v),
       share: () => {
         const sq = st.guesses.map((x) => [x.cls_ok, x.lane_ok, x.len_hint === "eq", x.letter_hint === "eq"].map((o) => (o ? "🟩" : "⬛")).join("")).join("\n");
-        const text = `Лерадл ${st.day} — ${st.solved ? `${st.guesses.length}/${st.max}` : "X/6"}\n${sq}\nhttps://t.me/${S.dict.bot}`;
+        const text = `Лерадл ${GI(st.game).short} ${st.day} — ${st.solved ? `${st.guesses.length}/${st.max}` : "X/6"}\n${sq}\nhttps://t.me/${S.dict.bot}`;
         if (tg?.openTelegramLink) tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(`https://t.me/${S.dict.bot}`)}&text=${encodeURIComponent(text)}`);
         else navigator.clipboard?.writeText(text).then(() => toast("Скопировано", "ok"));
       },
@@ -652,7 +774,7 @@ export function openHelp() {
     ["Что такое вайб?", "Число от 12 до 99 — насколько вы подходите: роли закрывают друг друга, близкий ранг, общее время игры, микрофон, город, общие игры и репутация."],
     ["Репутация и отзывы", "После мэтча или отряда можно оценить тиммейта 👍/👎 и выбрать теги. Сумма видна в анкете, хорошие теги — тоже."],
     ["Как попасть в турнир?", "«Главная» → турниры. Соло — жми «участвовать». Командный — создай команду, а друзья вступят в неё со страницы турнира."],
-    ["Что такое Лерадл?", "Ежедневная загадка: угадай героя HoK за 6 попыток по подсказкам. Есть стрик и награды. Результатом можно поделиться."],
+    ["Что такое Лерадл?", "Ежедневная загадка: угадай героя, агента или бойца дня за 6 попыток по подсказкам. Своя загадка для HoK, MLBB, Dota 2, Valorant, Brawl Stars и Genshin. Есть стрик и награды."],
     ["Что такое несо и тикеты?", "Несо — валюта Леры: за ежедневку, квесты, Лерадл, ачивки, гайды и турниры. Тикет — бесплатная крутка в гаче за каждый 7-й день стрика. В выходные ежедневка и квесты ×2."],
     ["Мне пишут гадости", "Открой анкету или чат → «пожаловаться». Человек пропадёт у тебя отовсюду, а жалоба уйдёт админу."],
   ];
@@ -981,9 +1103,9 @@ function aLog(b) {
 function aContent(b) {
   const names = { users: "игроков", online: "онлайн", dau: "за сутки", matches: "мэтчей", squads_open: "отрядов открыто", posts: "постов", premium: "premium" };
   const load = async () => {
-    let s, feeds, guides, sched;
+    let s, feeds, guides, sched, disp;
     try {
-      [s, feeds, guides, sched] = await Promise.all([Promise.resolve(null), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled")]);
+      [disp, feeds, guides, sched] = await Promise.all([api("/api/admin/disputes"), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled")]);
     } catch (e) { return fail(e); }
     mount(b, html`<div class="pad">
       <div class="kicker" style="margin:0 0 10px">создать</div>
@@ -993,6 +1115,9 @@ function aContent(b) {
         <button class="tile wide" data-act="post">${icon("feed")}<div class="grow"><b>Пост от Леры</b><div class="sub">сразу или по расписанию</div></div></button>
       </div>
 
+      ${disp.disputes.length ? html`<div class="kicker" style="margin:24px 0 6px;color:var(--hot)">⚖️ споры в турнирах · <b>${disp.disputes.length}</b></div>
+        <div class="list">${disp.disputes.map((x) => html`<button class="li" style="width:100%;text-align:left" data-act="dispute" data-id="${x.tid}">
+          <div class="grow" style="min-width:0"><b class="ell" style="display:block">${x.a_name} vs ${x.b_name}</b><div class="small muted ell">${GI(x.game).short} · ${x.title}${x.proof ? " · есть пруф" : ""}</div></div>${icon("send", 'width="16" height="16"')}</button>`)}</div>` : ""}
       <div class="kicker" style="margin:24px 0 6px">гайды на модерации · <b>${guides.guides.length}</b></div>
       ${guides.guides.length ? html`<div class="list">${guides.guides.map((x) => html`<div class="li" style="align-items:flex-start">
         <div class="grow" style="min-width:0"><b>${x.title}</b><div class="small muted">${GI(x.game).short} · ${x.author?.name}</div>
@@ -1014,6 +1139,7 @@ function aContent(b) {
   };
   load();
   return on(b, {
+    dispute: (x) => openTournament(+x.dataset.id, load),
     tour: () => tourCreate(load),
     poll: () => sheet((el, close) => {
       mount(el, html`<h2 class="h2" style="margin-bottom:14px">опрос дня</h2>
