@@ -1,11 +1,10 @@
-import { S, tg, api, html, mount, on, icon, avatar, nameEl, left, pushScreen, sheet, leraSays, fail, toast, haptic, rankName, roleName, confirmSheet } from "../core.js";
+import { S, tg, api, html, mount, on, icon, avatar, nameEl, left, pushScreen, sheet, leraSays, fail, toast, haptic, rankName, roleName, modeName, confirmSheet, GI, gameBadge } from "../core.js";
 import { chatRoom } from "./chats.js";
 import { openPerson } from "./person.js";
 
 export function render(root) {
   let mode = "", mine = 0;
-  mount(root, html`<div class="top"><div><div class="kicker">// собери пати на катку</div><h1 class="h1" style="margin-top:6px">отряды<i>.</i></h1></div></div>
-    <div class="pad"><div class="chips scroll" id="modes"></div></div>
+  mount(root, html`    <div class="pad"><div class="chips scroll" id="modes"></div></div>
     <div class="pad" id="list" style="padding-top:14px;padding-bottom:90px"></div>
     <button class="fab" data-act="create">${icon("plus")}собрать</button>`);
   const list = root.querySelector("#list");
@@ -13,13 +12,13 @@ export function render(root) {
   const drawModes = () => mount(root.querySelector("#modes"), html`
     <button class="chip ${!mode && !mine ? "on" : ""}" data-act="mode" data-m="">Все</button>
     <button class="chip ${mine ? "on" : ""}" data-act="mine">Мои</button>
-    ${Object.entries(S.dict.modes).map(([k, v]) => html`<button class="chip ${mode === k ? "on" : ""}" data-act="mode" data-m="${k}">${v}</button>`)}`);
+    ${Object.entries(GI().modes).map(([k, v]) => html`<button class="chip ${mode === k ? "on" : ""}" data-act="mode" data-m="${k}">${v}</button>`)}`);
 
   async function load() {
     drawModes();
     mount(list, html`<div class="skel" style="height:150px"></div><div class="sp"></div><div class="skel" style="height:150px"></div>`);
     let squads;
-    try { squads = (await api(`/api/squads?mode=${mode}&mine=${mine}`)).squads; } catch (e) { return fail(e); }
+    try { squads = (await api(`/api/squads?game=${S.game}&mode=${mode}&mine=${mine}`)).squads; } catch (e) { return fail(e); }
     if (!squads.length) {
       return mount(list, html`<div class="empty"><h2 class="h2">никто не собирает<span class="dot">.</span></h2>
         ${leraSays("Будь первым — создай отряд, а я позову людей. Обычно набирается минут за десять.")}</div>`);
@@ -40,26 +39,27 @@ export function render(root) {
 function squadCard(s) {
   const free = s.max_players - s.count;
   return html`<button class="sq" style="width:100%;text-align:left" data-act="open" data-id="${s.id}">
-    <div class="side ${s.mode}">${S.dict.modes[s.mode]}</div>
+    <div class="side" style="background:${GI(s.game).color}">${modeName(s.mode, s.game)}</div>
     <div class="body">
-      <div class="row"><b class="h3 grow">${s.title}</b>${s.voice ? html`<span class="tag">${icon("mic", 'width="11" height="11"')}</span>` : ""}</div>
+      <div class="row"><b class="h3 grow">${s.title}</b>${s.game !== S.game ? gameBadge(s.game) : ""}${s.voice ? html`<span class="tag">${icon("mic", 'width="11" height="11"')}</span>` : ""}</div>
       <div class="row wrap small muted" style="margin-top:6px;gap:8px">
-        ${rankName(s.rank) ? html`<span>${rankName(s.rank)}+</span>` : html`<span>любой ранг</span>`}
+        ${rankName(s.rank, s.game) ? html`<span>${rankName(s.rank, s.game)}+</span>` : html`<span>любой ранг</span>`}
         <span>·</span><span class="mono">${icon("clock", 'width="12" height="12" style="vertical-align:-2px"')} ${left(s.expires_at)}</span>
       </div>
-      ${s.roles_needed.length ? html`<div class="chips" style="margin-top:10px">${s.roles_needed.map((r) => html`<span class="chip" style="height:26px;font-size:12px">ищем: ${roleName(r)}</span>`)}</div>` : ""}
+      ${s.roles_needed.length ? html`<div class="chips" style="margin-top:10px">${s.roles_needed.map((r) => html`<span class="chip" style="height:26px;font-size:12px">ищем: ${roleName(r, s.game)}</span>`)}</div>` : ""}
       <div class="slots">${s.members.map((m) => avatar(m, 34))}${Array.from({ length: free }, () => html`<span class="slot-empty">${icon("plus")}</span>`)}
         <span class="grow"></span>${s.joined ? html`<span class="tag acc">ты тут</span>` : html`<span class="kicker">${free} ${free === 1 ? "место" : free < 5 ? "места" : "мест"}</span>`}</div>
     </div></button>`;
 }
 
 function createSheet(done) {
-  const d = S.dict;
-  const g = { title: "", mode: "ranked", rank: S.me.rank ?? null, roles_needed: [], max_players: 5, voice: false, hours: 2 };
+  const d = GI();
+  const mg = S.me.games.find((x) => x.game === S.game);
+  const g = { title: "", game: S.game, mode: Object.keys(d.modes)[0], rank: mg?.rank ?? null, roles_needed: [], max_players: 5, voice: false, hours: 2 };
   sheet((el, close) => {
     const draw = () => {
       const t = el.querySelector("#t")?.value; if (t !== undefined) g.title = t;
-      mount(el, html`<h2 class="h2" style="margin-bottom:18px">новый отряд<span class="dot">.</span></h2>
+      mount(el, html`<div class="row" style="margin-bottom:18px"><h2 class="h2 grow">новый отряд<span class="dot">.</span></h2>${gameBadge(S.game)}</div>
       <div class="field"><label>название</label><input class="input" id="t" maxlength="48" placeholder="Апаем мифик без токсиков" value="${g.title}"></div>
       <div class="field"><span class="lbl">режим</span><div class="chips">${Object.entries(d.modes).map(([k, v]) => html`<button class="chip ${g.mode === k ? "on" : ""}" data-act="m" data-v="${k}">${v}</button>`)}</div></div>
       <div class="field"><span class="lbl">минимальный ранг</span><div class="chips scroll">
@@ -102,16 +102,16 @@ export function openSquad(id, onChange) {
       el.classList.remove("flex");
       const free = s.max_players - s.count;
       const closed = s.status === "closed" || s.expired;
-      mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker">${S.dict.modes[s.mode]}</span></div>
+      mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker">${modeName(s.mode, s.game)}</span></div>
         <div class="pad">
           <h1 class="h1" style="text-transform:none;font-size:28px;margin:10px 0 12px">${s.title}</h1>
-          <div class="chips">${rankName(s.rank) ? html`<span class="chip on">${rankName(s.rank)}+</span>` : ""}
+          <div class="chips">${rankName(s.rank, s.game) ? html`<span class="chip on">${rankName(s.rank, s.game)}+</span>` : ""}
             ${s.voice ? html`<span class="chip">${icon("mic")}с голосом</span>` : ""}
             <span class="chip">${icon("clock")}${left(s.expires_at)}</span></div>
-          ${s.roles_needed.length ? html`<div class="kicker" style="margin:20px 0 8px">ищут</div><div class="chips">${s.roles_needed.map((r) => html`<span class="chip acc">${roleName(r)}</span>`)}</div>` : ""}
+          ${s.roles_needed.length ? html`<div class="kicker" style="margin:20px 0 8px">ищут</div><div class="chips">${s.roles_needed.map((r) => html`<span class="chip acc">${roleName(r, s.game)}</span>`)}</div>` : ""}
           <div class="kicker" style="margin:22px 0 4px">состав · ${s.count}/${s.max_players}</div>
           <div class="list">${s.members.map((m) => html`<button class="li" style="width:100%;text-align:left" data-act="who" data-id="${m.tg_id}">${avatar(m, 44, { online: true })}
-            <div class="grow"><b>${nameEl(m)}</b><div class="small muted">${[rankName(m.rank), ...m.roles.map(roleName)].filter(Boolean).join(" · ")}</div></div>
+            <div class="grow"><b>${nameEl(m)}</b><div class="small muted">${[rankName(m.rank, m.game), ...m.roles.map((r) => roleName(r, m.game))].filter(Boolean).join(" · ")}</div></div>
             ${m.tg_id === s.creator ? html`<span class="tag acc">лидер</span>` : ""}</button>`)}
             ${Array.from({ length: free }, () => html`<div class="li"><span class="slot-empty" style="width:44px;height:44px">${icon("plus")}</span><span class="muted">свободно</span></div>`)}</div>
           <div class="sp"></div>
@@ -127,7 +127,7 @@ export function openSquad(id, onChange) {
         back: pop,
         head: () => html`<button class="row grow" data-act="info" style="text-align:left">
             <div class="grow" style="min-width:0"><b class="ell" style="display:block">${s.title}</b>
-            <span class="small muted">${s.count}/${s.max_players} · ${S.dict.modes[s.mode]} · ${left(s.expires_at)}</span></div></button>
+            <span class="small muted">${s.count}/${s.max_players} · ${modeName(s.mode, s.game)} · ${left(s.expires_at)}</span></div></button>
           <button class="ibtn" data-act="share">${icon("share")}</button><button class="ibtn" data-act="info">${icon("dots")}</button>`,
         load: (after) => api(`/api/squads/${id}/messages?after=${after}`),
         send: (text) => api(`/api/squads/${id}/messages`, { method: "POST", body: { text } }),
@@ -145,7 +145,7 @@ export function openSquad(id, onChange) {
 
     function infoSheet() {
       sheet((sh, close) => {
-        mount(sh, html`<h2 class="h2">${s.title}</h2><div class="kicker" style="margin:6px 0 10px">${s.count}/${s.max_players} · ${S.dict.modes[s.mode]}</div>
+        mount(sh, html`<h2 class="h2">${s.title}</h2><div class="kicker" style="margin:6px 0 10px">${s.count}/${s.max_players} · ${modeName(s.mode, s.game)}</div>
           <div class="list">${s.members.map((m) => html`<button class="li" style="width:100%;text-align:left" data-act="who" data-id="${m.tg_id}">${avatar(m, 40, { online: true })}
             <b class="grow">${nameEl(m)}</b>${m.tg_id === s.creator ? html`<span class="tag acc">лидер</span>` : ""}</button>`)}</div>
           <div class="sp"></div>

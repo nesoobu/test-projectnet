@@ -1,24 +1,24 @@
-import { S, api, html, mount, on, icon, sheet, toast, fail, haptic, avatar, nameEl, rankName, roleName, leraSays, emit, ago } from "../core.js";
+import { S, api, html, mount, on, icon, sheet, toast, fail, haptic, avatar, nameEl, rankName, roleName, leraSays, emit, ago, GI } from "../core.js";
 import { openPerson, photoBg } from "./person.js";
 import { openPremium } from "./more.js";
 
-const FKEY = "lera_filters";
-const DEF = { gender: "", age_min: 14, age_max: 80, rank_min: 0, rank_max: 7, role: "", online: 0 };
-const loadF = () => { try { return { ...DEF, ...JSON.parse(localStorage.getItem(FKEY) || "{}") }; } catch { return { ...DEF }; } };
-const saveF = (f) => { try { localStorage.setItem(FKEY, JSON.stringify(f)); } catch {} };
-const activeFilters = (f) => Object.keys(DEF).filter((k) => f[k] !== DEF[k]).length;
+// фильтры храним отдельно для каждой игры: у игр разные ранги и роли
+const fkey = () => "lera_filters_" + S.game;
+const defF = () => ({ gender: "", age_min: 14, age_max: 80, rank_min: 0, rank_max: GI().ranks.length - 1, role: "", online: 0 });
+const loadF = () => { try { return { ...defF(), ...JSON.parse(localStorage.getItem(fkey()) || "{}") }; } catch { return defF(); } };
+const saveF = (f) => { try { localStorage.setItem(fkey(), JSON.stringify(f)); } catch {} };
+const activeFilters = (f) => { const D = defF(); return Object.keys(D).filter((k) => f[k] !== D[k]).length; };
 
 const EMPTY = ["Анкеты кончились. Даже я столько не свайпаю.", "Тут пусто. Ослабь фильтры или зайди позже — люди подтянутся.", "Ты посмотрел всех. Может, пора собрать отряд?"];
 
 export function render(root, arg) {
-  root.classList.add("noscroll");
   let tab = arg === "likes" ? "likes" : "cards";
   let cards = [], loading = true, superLeft = 0, premium = false, busy = false;
   let f = loadF();
 
-  root.innerHTML = `<div class="top"><div><div class="kicker" id="dk"></div><h1 class="h1" style="margin-top:6px">дуэт<i>.</i></h1></div>
+  root.innerHTML = `<div class="pad row" style="margin-bottom:12px"><div class="seg grow" id="seg"></div>
     <button class="ibtn" data-act="filters" id="fbtn"></button></div>
-    <div class="pad" style="margin-bottom:12px"><div class="seg" id="seg"></div></div>
+    <div class="pad kicker" id="dk" style="margin:-2px 0 10px"></div>
     <div id="body" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>`;
   const body = root.querySelector("#body");
 
@@ -29,13 +29,13 @@ export function render(root, arg) {
       <button class="${tab === "cards" ? "on" : ""}" data-act="tab" data-t="cards">Анкеты</button>
       <button class="${tab === "likes" ? "on" : ""}" data-act="tab" data-t="likes">Лайки ${S.unread.likes ? html`<i class="badge">${S.unread.likes}</i>` : ""}</button>`);
     const online = cards.filter((c) => c.online).length;
-    mount(root.querySelector("#dk"), html`// поиск тиммейта${online ? html` · <b>${online} онлайн</b>` : ""}`);
+    mount(root.querySelector("#dk"), html`// ${GI().name}${online ? html` · <b>${online} онлайн</b>` : ""}`);
   };
 
   async function load() {
     loading = true; draw();
     try {
-      const q = new URLSearchParams(Object.entries(f).map(([k, v]) => [k, String(v)]));
+      const q = new URLSearchParams(Object.entries({ ...f, game: S.game }).map(([k, v]) => [k, String(v)]));
       const [feed, st] = await Promise.all([api(`/api/duet/feed?${q}`), api("/api/duet/status")]);
       cards = feed.cards; superLeft = st.super_left; premium = st.premium;
     } catch (e) { fail(e); }
@@ -80,8 +80,8 @@ export function render(root, arg) {
         </div>
         <div class="nm">${nameEl(c)}${c.age ? html`<span class="age">${c.age}</span>` : ""}</div>
         <div class="chips" style="margin-top:12px">
-          ${rankName(c.rank) ? html`<span class="chip on">${rankName(c.rank)}</span>` : ""}
-          ${c.roles.map((r) => html`<span class="chip">${roleName(r)}</span>`)}
+          ${rankName(c.rank, c.game) ? html`<span class="chip on">${rankName(c.rank, c.game)}</span>` : ""}
+          ${c.roles.map((r) => html`<span class="chip">${roleName(r, c.game)}</span>`)}
           ${c.voice ? html`<span class="chip">${icon("mic")}</span>` : ""}
         </div>
         ${c.about ? html`<div class="about">${c.about}</div>` : ""}
@@ -194,7 +194,7 @@ export function render(root, arg) {
       <button class="lk" data-act="open-like" data-id="${p.tg_id}">
         ${photoBg(p)}<div class="shade"></div>
         ${p.super ? html`<span class="tag gold">супер</span>` : p.online ? html`<span class="tag on-dot">онлайн</span>` : ""}
-        <div class="t"><b>${nameEl(p)}${p.age ? `, ${p.age}` : ""}</b><span class="small muted">${rankName(p.rank) || ""} · ${ago(p.at)}</span></div>
+        <div class="t"><b>${nameEl(p)}${p.age ? `, ${p.age}` : ""}</b><span class="small muted">${rankName(p.rank, p.game) || ""} · ${ago(p.at)}</span></div>
       </button>`)}</div></div>`);
     body._likes = likes;
   }
@@ -208,7 +208,7 @@ export function render(root, arg) {
   }
 
   function filtersSheet() {
-    const d = S.dict;
+    const d = GI();
     sheet((el, close) => {
       const g = { ...f };
       const draw2 = () => mount(el, html`
@@ -241,7 +241,7 @@ export function render(root, arg) {
           else { g.rank_min = Math.min(rankTap, i); g.rank_max = Math.max(rankTap, i); rankTap = null; }
           haptic.sel(); draw2();
         },
-        reset: () => { Object.assign(g, DEF); draw2(); },
+        reset: () => { Object.assign(g, defF()); draw2(); },
         apply: () => { readAges(); f = g; saveF(f); close(); load(); },
       });
     });
@@ -252,7 +252,7 @@ export function render(root, arg) {
     filters: filtersSheet,
     like: () => act("like"), pass: () => act("pass"), super: () => act("super"), undo: () => act("undo"),
     reload: load,
-    reset: () => { f = { ...DEF }; saveF(f); load(); },
+    reset: () => { f = defF(); saveF(f); load(); },
     "open-like": (b) => {
       const p = body._likes?.find((x) => x.tg_id === +b.dataset.id);
       if (!p) return;

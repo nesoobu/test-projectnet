@@ -1,4 +1,4 @@
-import { S, api, html, mount, on, icon, avatar, nameEl, ago, hhmm, pushScreen, leraSays, fail, haptic, emit, sheet, confirmSheet, toast } from "../core.js";
+import { GI, modeName, S, api, html, mount, on, icon, avatar, nameEl, ago, hhmm, pushScreen, leraSays, fail, haptic, emit, sheet, confirmSheet, toast } from "../core.js";
 import { openPerson, reportSheet } from "./person.js";
 
 export function render(root) {
@@ -30,7 +30,7 @@ export function render(root) {
         <button class="li" style="width:100%;text-align:left" data-act="squad" data-id="${s.id}">
           <div class="av" style="--s:52px"><div class="in" style="background:var(--acc);color:var(--acc-ink)">${icon("squad", 'width="24" height="24"')}</div></div>
           <div class="grow"><div class="row"><b class="grow ell">${s.title}</b><span class="tag">${s.members}/${s.max_players}</span></div>
-            <div class="muted ell small" style="margin-top:4px">${s.last_text || S.dict.modes[s.mode]}</div></div>
+            <div class="muted ell small" style="margin-top:4px">${s.last_text || `${GI(s.game).short} · ${modeName(s.mode, s.game)}`}</div></div>
         </button>`)}</div></div>` : ""}
       <div class="sp"></div>`);
   }

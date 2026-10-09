@@ -1,3 +1,4 @@
+import asyncio
 import json
 import math
 import random
@@ -21,7 +22,10 @@ ONLINE_WINDOW = 5 * 60
 async def lifespan(_app):
     config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     await db.connect()
+    from .v2 import background_loop
+    task = asyncio.create_task(background_loop())
     yield
+    task.cancel()
     await db.close()
 
 
@@ -45,6 +49,10 @@ def today() -> str:
 
 def yday() -> str:
     return (datetime.now(MSK).date() - timedelta(days=1)).isoformat()
+
+
+def is_weekend() -> bool:
+    return datetime.now(MSK).weekday() >= 5
 
 
 def utcnow() -> datetime:
@@ -124,18 +132,26 @@ async def cosmetics(ids: list[int]) -> dict[int, dict]:
     return out
 
 
-def card(r: dict, cos: dict | None = None) -> dict:
+def card(r: dict, cos: dict | None = None, games: list | None = None, rep: dict | None = None,
+         game: str | None = None) -> dict:
+    """game — какая игра «главная» в карточке: её ранг/роли/мейны идут в rank/roles/heroes."""
     photos = jl(r.get("photos"))
     cos = cos or {}
     title = cos.get("title")
+    games = games or []
+    g = next((x for x in games if x["game"] == game), games[0] if games else None)
+    rep = rep or {}
     return {
         "tg_id": r["tg_id"],
         "name": r.get("nickname") or r.get("first_name") or "Игрок",
         "username": r.get("username"),
         "age": r.get("age"), "city": r.get("city"), "gender": r.get("gender"),
         "about": r.get("about") or "",
-        "rank": r.get("rank"),
-        "roles": jl(r.get("roles")), "heroes": jl(r.get("heroes")), "play_times": jl(r.get("play_times")),
+        "game": g["game"] if g else None,
+        "rank": g["rank"] if g else None,
+        "roles": g["roles"] if g else [], "heroes": g["heroes"] if g else [],
+        "games": games, "rep": rep.get("score", 0), "rep_tags": rep.get("tags", []),
+        "play_times": jl(r.get("play_times")),
         "voice": bool(r.get("voice")),
         "photos": photos,
         "avatar": photos[0] if photos else (r.get("photo_url") or ""),
@@ -148,15 +164,46 @@ def card(r: dict, cos: dict | None = None) -> dict:
     }
 
 
-async def people(ids) -> dict[int, dict]:
+async def user_games(ids: list[int]) -> dict[int, list]:
+    if not ids:
+        return {}
+    q = ",".join("?" * len(ids))
+    out: dict[int, list] = {}
+    for r in await db.all_(f"SELECT * FROM user_games WHERE tg_id IN ({q}) ORDER BY pos, rowid", *ids):
+        if r["game"] in C.GAMES:
+            out.setdefault(r["tg_id"], []).append({"game": r["game"], "rank": r["rank"], "roles": jl(r["roles"]),
+                                                   "heroes": jl(r["heroes"]), "uid": r["game_uid"]})
+    return out
+
+
+async def reputation(ids: list[int]) -> dict[int, dict]:
+    if not ids:
+        return {}
+    q = ",".join("?" * len(ids))
+    out: dict[int, dict] = {}
+    for r in await db.all_(f"SELECT to_id, thumb, tags FROM reviews WHERE to_id IN ({q})", *ids):
+        d = out.setdefault(r["to_id"], {"score": 0, "cnt": {}})
+        d["score"] += r["thumb"]
+        for t in jl(r["tags"]):
+            d["cnt"][t] = d["cnt"].get(t, 0) + 1
+    for d in out.values():
+        d["tags"] = [t for t, _ in sorted(d.pop("cnt").items(), key=lambda x: -x[1])
+                     if t in C.REVIEW_TAGS and t not in C.NEGATIVE_TAGS][:3]
+    return out
+
+
+async def people(ids, game: str | None = None) -> dict[int, dict]:
     ids = list({int(i) for i in ids})
     if not ids:
         return {}
     q = ",".join("?" * len(ids))
     rows = await db.all_(f"SELECT {UCOLS}, {PCOLS} FROM users u LEFT JOIN profiles p ON p.tg_id=u.tg_id "
                          f"WHERE u.tg_id IN ({q})", *ids)
-    cos = await cosmetics(ids)
-    return {r["tg_id"]: card(r, cos.get(r["tg_id"])) for r in rows}
+    cos, games, reps = await cosmetics(ids), await user_games(ids), await reputation(ids)
+    out = {r["tg_id"]: card(r, cos.get(r["tg_id"]), games.get(r["tg_id"]), reps.get(r["tg_id"]), game) for r in rows}
+    if 0 in out:
+        out[0].update(name="Лера", avatar="/static/img/lera.svg", lera=True)
+    return out
 
 
 async def ensure_user(tg: dict, start_param: str | None = None) -> dict:
@@ -235,13 +282,18 @@ async def bootstrap(me=Me):
             "level": level_of(me["xp"]), "pity": me["pity"],
             "premium_until": me["premium_until"] if is_premium(me) else None,
             "is_admin": me["is_admin"], "duet_visible": bool(prof.get("duet_visible", 1)),
-            "profile_done": bool(prof.get("nickname") and prof.get("rank") is not None and jl(prof.get("roles"))),
+            "profile_done": bool(prof.get("nickname") and person["games"]),
+            "mute_ready": bool(me.get("mute_ready")),
         },
         "unread": await unread_counts(uid),
         "dict": {
             "ranks": C.RANKS, "roles": C.ROLES, "play_times": C.PLAY_TIMES, "modes": C.SQUAD_MODES,
             "icebreakers": C.ICEBREAKERS, "premium_stars": config.PREMIUM_STARS, "bot": config.BOT_USERNAME,
             "items": {k: {"name": v[0], "kind": v[1], "rarity": v[2]} for k, v in C.ITEMS.items()},
+            "games": {k: {"name": g["name"], "short": g["short"], "color": g["color"], "ranks": g["ranks"],
+                          "roles": g["roles"], "modes": g["modes"], "heroes": bool(g.get("heroes"))}
+                      for k, g in C.GAMES.items()},
+            "review_tags": C.REVIEW_TAGS, "weekend": is_weekend(),
         },
     }
 
@@ -340,28 +392,40 @@ def vibe(me: dict, o: dict) -> tuple[int, list[str]]:
         score += 7; why.append("Один город")
     if set(me["heroes"]) & set(o["heroes"]):
         score += 4; why.append("Общие мейны")
+    shared = {g["game"] for g in me.get("games", [])} & {g["game"] for g in o.get("games", [])}
+    if len(shared) > 1:
+        score += min(9, 3 * (len(shared) - 1)); why.append(f"{len(shared)} общие игры")
+    rv = o.get("rep", 0)
+    if rv >= 3:
+        score += 4; why.append("Хорошие отзывы")
+    elif rv <= -3:
+        score -= 10
     if o["online"]:
         score += 4
     return max(12, min(99, score)), why[:3]
 
 
 @app.get("/api/duet/feed")
-async def duet_feed(gender: str = "", age_min: int = 14, age_max: int = 80, rank_min: int = 0,
-                    rank_max: int = 99, role: str = "", online: int = 0, me=Me):
+async def duet_feed(game: str = C.DEFAULT_GAME, gender: str = "", age_min: int = 14, age_max: int = 80,
+                    rank_min: int = 0, rank_max: int = 99, role: str = "", online: int = 0, me=Me):
     uid = me["tg_id"]
+    if game not in C.GAMES:
+        game = C.DEFAULT_GAME
     rows = await db.all_(
         f"SELECT {UCOLS}, {PCOLS} FROM profiles p JOIN users u ON u.tg_id=p.tg_id "
-        "WHERE p.duet_visible=1 AND p.tg_id != ? AND p.nickname IS NOT NULL "
+        "WHERE p.duet_visible=1 AND p.tg_id != ? AND p.tg_id != 0 AND p.nickname IS NOT NULL "
+        "AND EXISTS (SELECT 1 FROM user_games ug WHERE ug.tg_id=p.tg_id AND ug.game=?) "
         "AND NOT EXISTS (SELECT 1 FROM swipes s WHERE s.from_id=? AND s.to_id=p.tg_id) "
         "AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.from_id=? AND b.to_id=p.tg_id) OR (b.from_id=p.tg_id AND b.to_id=?)) "
-        "ORDER BY u.last_seen DESC LIMIT 300", uid, uid, uid, uid)
+        "ORDER BY u.last_seen DESC LIMIT 300", uid, game, uid, uid, uid)
     liked_me = {r["from_id"]: r["action"] for r in await db.all_(
         "SELECT from_id, action FROM swipes WHERE to_id=? AND action IN ('like','super')", uid)}
-    mine = (await people([uid]))[uid]
-    cos = await cosmetics([r["tg_id"] for r in rows])
+    mine = (await people([uid], game))[uid]
+    ids = [r["tg_id"] for r in rows]
+    cos, games, reps = await cosmetics(ids), await user_games(ids), await reputation(ids)
     out = []
     for r in rows:
-        c = card(r, cos.get(r["tg_id"]))
+        c = card(r, cos.get(r["tg_id"]), games.get(r["tg_id"]), reps.get(r["tg_id"]), game)
         if gender in ("m", "f") and c["gender"] != gender:
             continue
         if c["age"] and not (age_min <= c["age"] <= age_max):
@@ -489,7 +553,7 @@ async def chats(me=Me):
            for m in ms]
     out.sort(key=lambda x: x["at"], reverse=True)
     sq = await db.all_(
-        "SELECT s.id, s.title, s.mode, s.status, "
+        "SELECT s.id, s.title, s.game, s.mode, s.status, "
         "(SELECT text FROM squad_messages WHERE squad_id=s.id ORDER BY id DESC LIMIT 1) AS last_text, "
         "(SELECT COUNT(*) FROM squad_members WHERE squad_id=s.id) AS members, s.max_players "
         "FROM squads s JOIN squad_members sm ON sm.squad_id=s.id AND sm.tg_id=? "
@@ -562,8 +626,9 @@ async def block(b: BlockIn, me=Me):
 
 class SquadIn(BaseModel):
     title: str = Field(min_length=2, max_length=48)
+    game: str = C.DEFAULT_GAME
     mode: str
-    rank: int | None = Field(None, ge=0, le=len(C.RANKS) - 1)
+    rank: int | None = Field(None, ge=0, le=20)
     roles_needed: list[str] = []
     max_players: int = Field(5, ge=2, le=5)
     voice: bool = False
@@ -582,36 +647,41 @@ async def squad_view(sid: int, uid: int, with_members=True) -> dict:
     s["is_owner"] = s["creator"] == uid
     s["expired"] = parse_ts(s["expires_at"]) < utcnow()
     if with_members:
-        ppl = await people(ids + [s["creator"]])
+        ppl = await people(ids + [s["creator"]], s["game"])
         s["members"] = [ppl[i] for i in ids if i in ppl]
         s["creator_card"] = ppl.get(s["creator"])
     return s
 
 
 @app.get("/api/squads")
-async def squads(mode: str = "", mine: int = 0, me=Me):
+async def squads(game: str = "", mode: str = "", mine: int = 0, me=Me):
     uid = me["tg_id"]
-    q = ("SELECT s.id FROM squads s WHERE s.status='open' AND s.expires_at > datetime('now') "
-         + ("AND s.mode=? " if mode in C.SQUAD_MODES else "")
-         + ("AND EXISTS (SELECT 1 FROM squad_members m WHERE m.squad_id=s.id AND m.tg_id=?) " if mine else "")
+    q = ("SELECT s.id FROM squads s WHERE s.status IN ('open','full') AND s.expires_at > datetime('now') "
+         + ("AND s.game=? " if game in C.GAMES and not mine else "")
+         + ("AND s.mode=? " if mode else "")
+         + ("AND EXISTS (SELECT 1 FROM squad_members m WHERE m.squad_id=s.id AND m.tg_id=?) " if mine
+            else "AND s.status='open' ")
          + "ORDER BY s.created_at DESC LIMIT 60")
-    args = ([mode] if mode in C.SQUAD_MODES else []) + ([uid] if mine else [])
+    args = ([game] if game in C.GAMES and not mine else []) + ([mode] if mode else []) + ([uid] if mine else [])
     ids = [r["id"] for r in await db.all_(q, *args)]
     return {"squads": [await squad_view(i, uid) for i in ids]}
 
 
 @app.post("/api/squads")
 async def create_squad(s: SquadIn, me=Me):
-    if s.mode not in C.SQUAD_MODES:
+    g = C.GAMES.get(s.game)
+    if not g or s.mode not in g["modes"]:
         raise HTTPException(400, "Неизвестный режим")
+    if s.rank is not None and s.rank >= len(g["ranks"]):
+        raise HTTPException(400, "Неизвестный ранг")
     uid = me["tg_id"]
     active = await db.val("SELECT COUNT(*) FROM squads WHERE creator=? AND status='open' AND expires_at > datetime('now')", uid)
     if active >= 3:
         raise HTTPException(429, "У тебя уже 3 открытых отряда — закрой лишние")
     sid = await db.run(
-        "INSERT INTO squads (creator, title, mode, rank, roles_needed, max_players, voice, expires_at) "
-        "VALUES (?,?,?,?,?,?,?,?)", uid, s.title.strip(), s.mode, s.rank,
-        json.dumps([r for r in s.roles_needed if r in C.ROLES]), s.max_players, int(s.voice),
+        "INSERT INTO squads (creator, title, game, mode, rank, roles_needed, max_players, voice, expires_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?)", uid, s.title.strip(), s.game, s.mode, s.rank,
+        json.dumps([r for r in s.roles_needed if r in g["roles"]]), s.max_players, int(s.voice),
         sqlts(utcnow() + timedelta(hours=s.hours)))
     await db.run("INSERT INTO squad_members (squad_id, tg_id) VALUES (?,?)", sid, uid)
     await add_xp(uid, 10)
@@ -643,6 +713,9 @@ async def squad_join(sid: int, me=Me):
         await db.run("UPDATE squads SET status='full' WHERE id=?", sid)
         for m in await db.all_("SELECT tg_id FROM squad_members WHERE squad_id=?", sid):
             notify.send(m["tg_id"], f"✅ Отряд «{_h(s['title'])}» собран! Заходите в игру.", f"s{sid}")
+        from .v2 import autopost
+        await autopost(f"🛡 Отряд «{s['title']}» собран — {s['max_players']} игроков уже в катке. "
+                       "Тоже хочешь? Собери свой во вкладке «Тиммейты».", s["game"], "event")
     return await squad_view(sid, uid)
 
 
@@ -700,6 +773,7 @@ async def squad_send(sid: int, body: MsgIn, me=Me):
 class PostIn(BaseModel):
     text: str = Field(min_length=1, max_length=1500)
     image: str | None = None
+    game: str | None = None
 
 
 async def posts_view(rows: list[dict], uid: int) -> list[dict]:
@@ -719,10 +793,15 @@ async def posts_view(rows: list[dict], uid: int) -> list[dict]:
 
 
 @app.get("/api/feed")
-async def feed(before: int = 0, author: int = 0, top: int = 0, me=Me):
+async def feed(before: int = 0, author: int = 0, top: int = 0, game: str = "", kind: str = "", me=Me):
     uid = me["tg_id"]
-    where = "WHERE NOT EXISTS (SELECT 1 FROM blocks b WHERE b.from_id=? AND b.to_id=p.author)"
+    where = ("WHERE NOT EXISTS (SELECT 1 FROM blocks b WHERE b.from_id=? AND b.to_id=p.author) "
+             "AND (p.publish_at IS NULL OR p.publish_at <= datetime('now'))")
     args: list = [uid]
+    if game in C.GAMES:
+        where += " AND (p.game = ? OR p.game IS NULL)"; args.append(game)
+    if kind in ("user", "news", "event"):
+        where += " AND p.kind = ?"; args.append(kind)
     if before:
         where += " AND p.id < ?"; args.append(before)
     if author:
@@ -742,7 +821,8 @@ async def post_create(p: PostIn, me=Me):
     recent = await db.val("SELECT COUNT(*) FROM posts WHERE author=? AND created_at > datetime('now','-1 hour')", me["tg_id"])
     if recent >= 5:
         raise HTTPException(429, "Не больше 5 постов в час")
-    pid = await db.run("INSERT INTO posts (author, text, image) VALUES (?,?,?)", me["tg_id"], p.text.strip(), img)
+    game = p.game if p.game in C.GAMES else None
+    pid = await db.run("INSERT INTO posts (author, text, image, game) VALUES (?,?,?,?)", me["tg_id"], p.text.strip(), img, game)
     await add_xp(me["tg_id"], 5)
     return (await posts_view([await db.one("SELECT * FROM posts WHERE id=?", pid)], me["tg_id"]))[0]
 
@@ -801,7 +881,7 @@ async def comment_add(pid: int, body: MsgIn, me=Me):
 @app.get("/api/wiki/heroes")
 async def heroes(me=Me):
     pop = {}
-    for r in await db.all_("SELECT heroes FROM profiles WHERE heroes != '[]'"):
+    for r in await db.all_("SELECT heroes FROM user_games WHERE game='hok' AND heroes != '[]'"):
         for h in jl(r["heroes"]):
             pop[h] = pop.get(h, 0) + 1
     return {"heroes": [{"name": n, "cls": c, "lane": l, "lane_name": C.ROLES[l], "mains": pop.get(n, 0)}
@@ -837,6 +917,8 @@ async def checkin(me=Me):
     reward = 20 + 10 * min(streak - 1, 6)
     if is_premium(me):
         reward *= 2
+    if is_weekend():
+        reward *= 2
     ticket = streak % 7 == 0
     await add_balance(me["tg_id"], reward, "checkin")
     if ticket:
@@ -850,7 +932,8 @@ async def checkin(me=Me):
 async def quests(me=Me):
     rows = {r["quest_id"]: r for r in await db.all_(
         "SELECT * FROM quest_progress WHERE tg_id=? AND day=?", me["tg_id"], today())}
-    return {"quests": [{"id": k, "title": v[0], "goal": v[1], "reward": v[2],
+    k2 = 2 if is_weekend() else 1
+    return {"weekend": k2 == 2, "quests": [{"id": k, "title": v[0], "goal": v[1], "reward": v[2] * k2,
                         "progress": rows.get(k, {}).get("progress", 0), "claimed": bool(rows.get(k, {}).get("claimed"))}
                        for k, v in C.QUESTS.items()]}
 
@@ -864,6 +947,8 @@ async def quest_claim(qid: str, me=Me):
                          me["tg_id"], today(), qid, goal)
     if not ok:
         raise HTTPException(409, "Квест ещё не выполнен")
+    if is_weekend():
+        reward *= 2
     await add_balance(me["tg_id"], reward, f"quest:{qid}")
     await add_xp(me["tg_id"], 5)
     return {"reward": reward}
@@ -973,6 +1058,11 @@ async def gacha(body: RollIn, me=Me):
     await bump_quest(uid, "gacha")
     u = await db.one("SELECT balance, tickets FROM users WHERE tg_id=?", uid)
     leg = any(r["rarity"] == "legendary" for r in results)
+    if leg:
+        from .v2 import autopost
+        nm = (await people([uid]))[uid]["name"]
+        it = next(r for r in results if r["rarity"] == "legendary")
+        await autopost(f"✨ {nm} выбил(а) легендарку «{it['name']}» в гаче! Поздравляем — и завидуем.", None, "event")
     return {"results": results, "refund": refund, "pity": pity, "pity_max": C.GACHA_PITY, **u,
             "lera": random.choice(C.LERA_LINES["legendary"]) if leg else None}
 
@@ -1039,6 +1129,12 @@ async def admin_stats(me=Me):
         "premium": "SELECT COUNT(*) FROM users WHERE premium_until > datetime('now')",
     }
     return {k: await db.val(v) for k, v in q.items()}
+
+
+# ── v2: игры, турниры, вики, автопостинг, мини-игры ─────────────────────
+from . import v2  # noqa: E402
+
+app.include_router(v2.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────

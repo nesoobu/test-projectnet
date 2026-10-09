@@ -27,6 +27,11 @@ async def main():
                       random.randint(1, 7), json.dumps(random.sample(list(C.ROLES), random.randint(1, 2))),
                       json.dumps(random.sample(heroes, 3)), json.dumps(random.sample(list(C.PLAY_TIMES), 2)),
                       random.random() > .4)
+        for gi, gid in enumerate(random.sample(list(C.GAMES), random.randint(1, 3)) if i % 4 else ["hok", "mlbb"]):
+            g = C.GAMES[gid]
+            await db.run("INSERT OR REPLACE INTO user_games (tg_id, game, rank, roles, heroes, pos) VALUES (?,?,?,?,?,?)",
+                         uid, gid, random.randrange(len(g["ranks"])), json.dumps(random.sample(list(g["roles"]), random.randint(1, 2))),
+                         json.dumps(random.sample([h[0] for h in g["heroes"]], 3) if g.get("heroes") else []), gi)
         if random.random() > .5:
             item = random.choice([k for k, v in C.ITEMS.items() if v[1] == "frame" and k not in C.PREMIUM_ONLY])
             await db.run("INSERT OR IGNORE INTO inventory (tg_id, item_id, equipped) VALUES (?,?,1)", uid, item)

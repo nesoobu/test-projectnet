@@ -1,4 +1,5 @@
-import { S, api, html, mount, on, icon, avatar, nameEl, ago, sheet, leraSays, fail, toast, haptic, safeUrl, confirmSheet, pushScreen } from "../core.js";
+import { S, tg, api, html, mount, on, icon, avatar, nameEl, ago, sheet, leraSays, fail, toast, haptic, safeUrl, confirmSheet, pushScreen, GI, gameBadge } from "../core.js";
+import { gameSwitch } from "../games.js";
 import { openPerson } from "./person.js";
 
 export async function uploadImage(file) {
@@ -8,15 +9,19 @@ export async function uploadImage(file) {
 }
 
 export function postHtml(p) {
-  return html`<article class="post" data-pid="${p.id}">
+  const lera = p.author?.lera;
+  const kindTag = p.kind === "news" ? html`<span class="tag acc">новости</span>` : p.kind === "event" ? html`<span class="tag">событие</span>` : "";
+  return html`<article class="post ${lera ? "post-lera" : ""}" data-pid="${p.id}">
     <div class="row">
-      <button data-act="who" data-id="${p.author?.tg_id}">${avatar(p.author, 40, { online: true })}</button>
-      <div class="grow"><b>${nameEl(p.author)}</b>${p.author?.title ? html` <span class="tag" style="margin-left:4px">${p.author.title}</span>` : ""}
-        <div class="small muted mono">${ago(p.created_at)}</div></div>
+      <button data-act="who" data-id="${lera ? "" : p.author?.tg_id}">${avatar(p.author, 40, { online: !lera })}</button>
+      <div class="grow"><div class="row" style="gap:6px"><b>${nameEl(p.author)}</b>${lera ? html`<span class="verified">${icon("check", 'width="10" height="10" stroke-width="3"')}</span>` : ""}
+        ${p.author?.title && !lera ? html`<span class="tag">${p.author.title}</span>` : ""}</div>
+        <div class="row small muted mono" style="gap:6px;margin-top:2px">${ago(p.created_at)}${p.game ? html` · ${gameBadge(p.game)}` : ""}${kindTag ? html` · ${kindTag}` : ""}</div></div>
       ${p.own || S.me.is_admin ? html`<button class="ibtn" style="background:none;width:32px;height:32px" data-act="del" data-id="${p.id}">${icon("trash", 'width="17" height="17"')}</button>` : ""}
     </div>
     <p class="txt">${p.text}</p>
     ${safeUrl(p.image) ? html`<div class="img"><img src="${safeUrl(p.image)}" alt="" loading="lazy"></div>` : ""}
+    ${p.link && p.link.startsWith("https://") ? html`<button class="link-card" data-act="link" data-href="${p.link}">${icon("link", 'width="16" height="16"')}<span class="ell grow">${p.link.replace(/^https:\/\/(www\.)?/, "")}</span>${icon("send", 'width="16" height="16"')}</button>` : ""}
     <div class="bar">
       <button class="${p.liked ? "liked" : ""}" data-act="like" data-id="${p.id}">${icon("heart")}<span>${p.likes || ""}</span></button>
       <button data-act="comments" data-id="${p.id}">${icon("chat")}<span>${p.comments || ""}</span></button>
@@ -26,15 +31,20 @@ export function postHtml(p) {
 
 export function render(root) {
   let tab = "new", posts = [], end = false, loading = false;
-  mount(root, html`<div class="top"><div><div class="kicker">// что на линиях</div><h1 class="h1" style="margin-top:6px">лента<i>.</i></h1></div></div>
-    <div class="pad" style="margin-bottom:12px"><div class="seg" id="seg"></div></div>
+  let scope = (() => { try { return localStorage.getItem("lera_feed_scope") || "game"; } catch { return "game"; } })();
+  mount(root, html`<div class="top"><div><div class="kicker">// что происходит</div><h1 class="h1" style="margin-top:6px">лента<i>.</i></h1></div>${gameSwitch()}</div>
+    <div class="pad" style="margin-bottom:12px"><div class="seg" id="seg"></div><div class="chips scroll" id="scope" style="margin-top:10px"></div></div>
     <button class="compose-card" data-act="compose">${avatar(S.me, 36)}<span class="grow">Что нового? Хайлайт, мысль, поиск пати…</span>${icon("image", 'width="20" height="20"')}</button>
     <div id="posts"></div><div id="more"></div>`);
   const box = root.querySelector("#posts"), more = root.querySelector("#more");
 
   const drawSeg = () => mount(root.querySelector("#seg"), html`
     <button class="${tab === "new" ? "on" : ""}" data-act="tab" data-t="new">Свежее</button>
-    <button class="${tab === "top" ? "on" : ""}" data-act="tab" data-t="top">Топ недели</button>`);
+    <button class="${tab === "top" ? "on" : ""}" data-act="tab" data-t="top">Топ недели</button>
+    <button class="${tab === "news" ? "on" : ""}" data-act="tab" data-t="news">Новости</button>`);
+  const drawScope = () => mount(root.querySelector("#scope"), html`
+    <button class="chip ${scope === "game" ? "on" : ""}" data-act="scope" data-v="game">${GI().short}</button>
+    <button class="chip ${scope === "all" ? "on" : ""}" data-act="scope" data-v="all">Все игры</button>`);
 
   async function load(reset = true) {
     if (loading) return;
@@ -42,7 +52,9 @@ export function render(root) {
     if (reset) { posts = []; end = false; mount(box, html`<div class="spinner"></div>`); }
     try {
       const before = !reset && posts.length ? posts[posts.length - 1].id : 0;
-      const r = await api(`/api/feed?top=${tab === "top" ? 1 : 0}&before=${tab === "top" ? 0 : before}`);
+      const qs = new URLSearchParams({ top: tab === "top" ? 1 : 0, before: tab === "top" ? 0 : before,
+        game: scope === "game" ? S.game : "", kind: tab === "news" ? "news" : "" });
+      const r = await api(`/api/feed?${qs}`);
       posts = reset ? r.posts : posts.concat(r.posts);
       end = r.posts.length < 20 || tab === "top";
     } catch (e) { fail(e); }
@@ -51,7 +63,7 @@ export function render(root) {
   }
 
   function draw() {
-    drawSeg();
+    drawSeg(); drawScope();
     if (!posts.length) {
       mount(box, html`<div class="empty"><h2 class="h2">пока тихо<span class="dot">.</span></h2>${leraSays("Напиши первый пост — я лично лайкну. Ну, мысленно.")}</div>`);
     } else mount(box, posts.map(postHtml));
@@ -60,6 +72,7 @@ export function render(root) {
 
   const off = on(root, {
     tab: (b) => { tab = b.dataset.t; haptic.sel(); load(); },
+    scope: (b) => { scope = b.dataset.v; try { localStorage.setItem("lera_feed_scope", scope); } catch {} haptic.sel(); load(); },
     more: () => load(false),
     compose: () => composeSheet((p) => { posts.unshift(p); draw(); }),
     ...postActions(() => posts, (fn) => { posts = fn(posts); draw(); }),
@@ -70,6 +83,7 @@ export function render(root) {
 
 export function postActions(getPosts, update) {
   return {
+    link: (b) => { const u = b.dataset.href; tg?.openLink ? tg.openLink(u) : window.open(u, "_blank", "noopener"); },
     who: (b) => b.dataset.id && openPerson(+b.dataset.id),
     like: async (b) => {
       const id = +b.dataset.id;
@@ -114,7 +128,7 @@ function composeSheet(done) {
       post: async () => {
         const text = el.querySelector("#tx").value.trim();
         if (!text) return toast("Напиши что-нибудь", "err");
-        try { const p = await api("/api/feed", { method: "POST", body: { text, image } }); haptic.ok(); close(); done(p); } catch (e) { fail(e); }
+        try { const p = await api("/api/feed", { method: "POST", body: { text, image, game: S.game } }); haptic.ok(); close(); done(p); } catch (e) { fail(e); }
       },
     });
   });

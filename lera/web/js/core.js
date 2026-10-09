@@ -12,10 +12,10 @@ export function html(str, ...vals) {
   for (let i = 0; i < vals.length; i++) out += fmt(vals[i]) + str[i + 1];
   return new Raw(out);
 }
-export const safeUrl = (u) => (typeof u === "string" && (u.startsWith("/uploads/") || u.startsWith("https://"))) ? u : "";
+export const safeUrl = (u) => (typeof u === "string" && (u.startsWith("/uploads/") || u.startsWith("/static/") || u.startsWith("https://"))) ? u : "";
 
 // ─── state ───
-export const S = { me: null, dict: null, unread: { chats: 0, likes: 0 } };
+export const S = { me: null, dict: null, unread: { chats: 0, likes: 0 }, game: null };
 const listeners = new Set();
 export const onState = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 export const emit = () => listeners.forEach((fn) => fn(S));
@@ -46,7 +46,13 @@ export async function api(path, { method = "GET", body, form } = {}) {
 export async function refreshMe() {
   const b = await api("/api/bootstrap");
   S.me = b.me; S.dict = b.dict; S.unread = b.unread;
+  if (!S.game || !S.dict.games[S.game]) {
+    let saved = null;
+    try { saved = localStorage.getItem("lera_game"); } catch {}
+    S.game = S.me.games.find((g) => g.game === saved)?.game || S.me.games[0]?.game || (S.dict.games[saved] ? saved : "hok");
+  }
   applyAccent(S.me.accent);
+  applyGameColor();
   emit();
   return b;
 }
@@ -203,8 +209,23 @@ export function leraSays(text) {
   return html`<div class="lera"><div class="face">Л</div><div class="bub">${text}</div></div>`;
 }
 
-export const rankName = (i) => (i == null ? null : S.dict?.ranks?.[i]);
-export const roleName = (r) => S.dict?.roles?.[r] || r;
+// ─── игры ───
+export const GI = (g = S.game) => S.dict?.games?.[g] || S.dict?.games?.hok;
+export const rankName = (i, g = S.game) => (i == null ? null : GI(g)?.ranks?.[i]);
+export const roleName = (r, g = S.game) => GI(g)?.roles?.[r] || r;
+export const modeName = (m, g = S.game) => GI(g)?.modes?.[m] || m;
+export function setGame(g) {
+  if (!S.dict.games[g] || S.game === g) return;
+  S.game = g;
+  try { localStorage.setItem("lera_game", g); } catch {}
+  applyGameColor();
+  emit();
+}
+export function applyGameColor() {
+  document.documentElement.style.setProperty("--game", GI()?.color || "#d4ff3f");
+}
+export const gameBadge = (g, extra = "") => html`<span class="gbadge" style="--gc:${GI(g)?.color}" ${raw(extra)}>${GI(g)?.short || g}</span>`;
+export const myGame = (g = S.game) => S.me?.games?.find((x) => x.game === g);
 
 // ─── icons ───
 const P = {
@@ -242,6 +263,17 @@ const P = {
   share: '<path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  home: '<path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/>',
+  pad: '<path d="M7 8h10a5 5 0 0 1 4.6 7l-.7 1.7a2.5 2.5 0 0 1-4.2.6L15 15H9l-1.7 2.3a2.5 2.5 0 0 1-4.2-.6L2.4 15A5 5 0 0 1 7 8z"/><path d="M7 11v3M5.5 12.5h3M16 12h.01M18 13.5h.01"/>',
+  swords: '<path d="M14.5 17.5L3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2M9.5 6.5L14 2h3v3l-4.5 4.5M5 14l-2 2 3 3 2-2"/>',
+  puzzle: '<path d="M10 3h4v3a2 2 0 1 0 4 0V5h3v5h-1a2 2 0 1 0 0 4h1v6h-6v-1a2 2 0 1 0-4 0v1H4v-6h1a2 2 0 1 0 0-4H4V5h6z"/>',
+  poll: '<path d="M4 20h16M7 16V9M12 16V4M17 16v-5"/>',
+  rss: '<path d="M5 19a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>',
+  medal: '<circle cx="12" cy="15" r="5"/><path d="M8.5 11L6 3h4l2 5 2-5h4l-2.5 8"/>',
+  thumb: '<path d="M7 11v9H4v-9zM7 11l4-8a2 2 0 0 1 2 2v4h5.5a2 2 0 0 1 2 2.3l-1.2 7A2 2 0 0 1 17.3 20H7"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
+  fire: '<path d="M12 21c-4 0-7-2.7-7-6.5 0-3 2-5 3.5-6.5.3 2 1.5 3 2.5 3-1-3 .5-6.5 3.5-8 0 3 5.5 5.5 5.5 11.5 0 3.8-3 6.5-8 6.5z"/>',
   coin: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/>',
 };
 export const icon = (name, extra = "") =>

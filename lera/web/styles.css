@@ -532,3 +532,99 @@ details.faq p { margin: 0 0 16px; color: var(--mute); }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 .swipe .tag:not(.gold):not(.acc), .lk .tag:not(.gold):not(.acc) { background: rgba(11, 11, 12, .55); color: #fff; -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+
+/* ─── v2: игры ─── */
+:root { --game: #ffc64a; }
+.gswitch {
+  display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 10px; border-radius: 999px; flex: none;
+  background: var(--card); font: 700 12px/1 var(--display); letter-spacing: -.01em; color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--gc) 45%, transparent);
+}
+.gswitch i { width: 10px; height: 10px; border-radius: 3px; background: var(--gc); transform: rotate(45deg); box-shadow: 0 0 10px var(--gc); }
+.gswitch svg { width: 15px; height: 15px; color: var(--mute); }
+.gdot {
+  width: 40px; height: 40px; border-radius: 12px; flex: none; display: grid; place-items: center;
+  background: var(--gc); color: #0b0b0c; font: 900 13px/1 var(--display); letter-spacing: -.04em; transform: rotate(-4deg);
+}
+.gbadge { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 5px; font: 700 9.5px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; background: color-mix(in srgb, var(--gc) 20%, transparent); color: var(--gc); white-space: nowrap; }
+.grow-row { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; background: var(--card); text-align: left; }
+.grow-row.on { box-shadow: inset 0 0 0 2px var(--gc); }
+.games-list { display: grid; gap: 8px; margin-top: 8px; }
+.gl-row { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 16px; background: var(--card); }
+.gl-row .gdot { width: 34px; height: 34px; font-size: 11px; }
+.rep-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; color: var(--acc); }
+.rep-row.neg { color: var(--hot); }
+.rep-row b { font: 900 18px/1 var(--display); }
+
+/* тиммейты: слова-переключатели */
+.mates-top { align-items: center; }
+.mates-top .words { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+.mates-top .words button { font: 900 30px/.95 var(--display); letter-spacing: -.045em; color: var(--dim); transition: color .2s; }
+.mates-top .words button.on { color: var(--ink); }
+.mates-top .words button.on::after { content: "."; color: var(--acc); }
+.mates-body { flex: 1; min-height: 0; position: relative; }
+.mates-body.flexcol { display: flex; flex-direction: column; }
+.mates-body.scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+/* главная */
+.ready-card {
+  border-radius: 26px; padding: 18px; background: var(--gc); color: #0b0b0c; position: relative; overflow: hidden;
+}
+.ready-card::after { content: ""; position: absolute; right: -60px; bottom: -80px; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(rgba(255,255,255,.35), transparent 65%); pointer-events: none; }
+.ready-card .btn.dark-on { background: #0b0b0c; color: var(--gc); position: relative; z-index: 1; }
+.pulse { width: 14px; height: 14px; border-radius: 50%; background: rgba(11, 11, 12, .25); flex: none; }
+.pulse.on { background: #0b0b0c; animation: pulse 1.6s ease-out infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(11,11,12,.5); } 100% { box-shadow: 0 0 0 16px rgba(11,11,12,0); } }
+.hscroll { display: flex; gap: 10px; overflow-x: auto; padding: 0 16px 4px; scrollbar-width: none; scroll-snap-type: x mandatory; }
+.hscroll::-webkit-scrollbar { display: none; }
+.rp { flex: none; width: 230px; min-height: 130px; border-radius: 20px; background: var(--card); padding: 12px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; }
+.rp-note { color: var(--ink); opacity: .85; }
+.tile.acc2 { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--acc); }
+.poll-opt { width: 100%; position: relative; display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 14px; border-radius: 14px; background: var(--card2); overflow: hidden; text-align: left; }
+.poll-opt i { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--acc) 22%, transparent); transition: width .6s var(--ease); }
+.poll-opt span, .poll-opt b { position: relative; }
+.poll-opt.mine { box-shadow: inset 0 0 0 1.5px var(--acc); }
+.poll-opt:not(.res):active { transform: scale(.98); }
+.poll-opt[disabled] { color: inherit; cursor: default; }
+.wide-card { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; }
+.wide-card svg { width: 22px; height: 22px; flex: none; color: var(--mute); }
+
+/* турниры */
+.tour { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 20px; background: var(--card); text-align: left; }
+.tour-date { width: 52px; height: 56px; border-radius: 14px; flex: none; display: grid; place-content: center; text-align: center; background: var(--gc); color: #0b0b0c; }
+.tour-date b { font: 900 22px/1 var(--display); }
+.tour-date span { font: 700 9.5px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; margin-top: 3px; }
+.tour-hero { border-radius: 26px; padding: 20px 18px; background: var(--gc); color: #0b0b0c; }
+.tour-hero .tag { background: rgba(11, 11, 12, .12); color: #0b0b0c; }
+.tour-hero .tag.gold { background: #0b0b0c; color: var(--gc); }
+.bracket { display: flex; gap: 14px; overflow-x: auto; padding: 0 16px 8px; scrollbar-width: none; }
+.bracket::-webkit-scrollbar { display: none; }
+.b-round { flex: none; width: 168px; display: flex; flex-direction: column; justify-content: space-around; gap: 10px; }
+.b-match { border-radius: 14px; background: var(--card); overflow: hidden; }
+.b-team { width: 100%; display: flex; align-items: center; gap: 6px; height: 38px; padding: 0 12px; font-size: 13px; text-align: left; color: var(--mute); }
+.b-team + .b-team { border-top: 1px solid var(--line); }
+.b-team[data-act] { color: var(--ink); }
+.b-team.win { color: var(--acc-ink); background: var(--acc); font-weight: 700; }
+.b-team.mine:not(.win) { color: var(--acc); }
+
+/* лерадл */
+.ldl-head, .ldl-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr .7fr .7fr; gap: 4px; align-items: center; }
+.ldl-head { margin-top: 18px; font: 700 9.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--mute); padding: 0 4px; }
+.ldl-row > * { min-height: 42px; border-radius: 10px; display: grid; place-items: center; padding: 4px; text-align: center; font-size: 11.5px; line-height: 1.15; animation: msgIn .3s var(--ease); }
+.ldl-row b { background: var(--card2); justify-content: start; font-size: 12.5px; }
+.ldl-row .ok { background: var(--acc); color: var(--acc-ink); font-weight: 700; }
+.ldl-row .no { background: var(--card); color: var(--mute); }
+.ldl-row.win b { background: var(--acc); color: var(--acc-ink); }
+
+/* профиль: мои игры */
+.mygame { flex: none; width: 150px; min-height: 128px; border-radius: 20px; background: var(--card); padding: 12px; display: flex; flex-direction: column; gap: 4px; text-align: left; scroll-snap-align: start; }
+.mygame .gdot { margin-bottom: 8px; }
+.mygame b { font: 700 13.5px/1.15 var(--display); letter-spacing: -.02em; }
+.mygame.on { box-shadow: inset 0 0 0 2px var(--gc); }
+.mygame.add { align-items: center; justify-content: center; color: var(--mute); border: 1.5px dashed var(--line); background: none; width: 110px; }
+
+/* лента: посты Леры, ссылки */
+.post-lera { background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 6%, transparent), transparent 70%); }
+.verified { width: 16px; height: 16px; border-radius: 50%; background: var(--acc); color: var(--acc-ink); display: grid; place-items: center; }
+.link-card { width: 100%; margin-top: 12px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 14px; background: var(--card); color: var(--acc); font: 500 13px/1 var(--mono); text-align: left; }
+.guide-body { white-space: pre-wrap; word-wrap: break-word; line-height: 1.55; font-size: 15.5px; }

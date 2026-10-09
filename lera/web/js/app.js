@@ -1,23 +1,24 @@
 import { tg, S, api, refreshMe, onState, emit, html, mount, icon, on, fail, closeAllScreens, leraSays } from "./core.js";
-import * as duet from "./pages/duet.js";
-import * as squads from "./pages/squads.js";
+import "./games.js";
+import * as home from "./pages/home.js";
+import * as mates from "./pages/mates.js";
 import * as feed from "./pages/feed.js";
 import * as chats from "./pages/chats.js";
 import * as profile from "./pages/profile.js";
 
 const TABS = [
-  { id: "duet", label: "Дуэт", ic: "duet", mod: duet },
-  { id: "squads", label: "Отряды", ic: "squad", mod: squads },
+  { id: "home", label: "Главная", ic: "home", mod: home },
+  { id: "mates", label: "Тиммейты", ic: "pad", mod: mates },
   { id: "feed", label: "Лента", ic: "feed", mod: feed },
   { id: "chats", label: "Чаты", ic: "chat", mod: chats },
   { id: "profile", label: "Я", ic: "user", mod: profile },
 ];
 
-let current = null, cleanup = null, view, bar;
+let current = null, cleanup = null, view, bar, lastGame = null;
 
 function renderBar() {
   mount(bar, TABS.map((t) => {
-    const n = t.id === "chats" ? S.unread.chats : t.id === "duet" ? S.unread.likes : 0;
+    const n = t.id === "chats" ? S.unread.chats : t.id === "mates" ? S.unread.likes : 0;
     return html`<button class="tab ${t.id === current ? "on" : ""}" data-act="tab" data-id="${t.id}">
       ${icon(t.ic)}<span>${t.label}</span>${n ? html`<i class="badge">${n > 99 ? "99+" : n}</i>` : ""}
     </button>`;
@@ -29,6 +30,7 @@ export function go(id, arg) {
   closeAllScreens();
   if (typeof cleanup === "function") cleanup();
   current = t.id;
+  lastGame = S.game;
   try { localStorage.setItem("lera_tab", current); } catch {}
   view.className = "view";
   view.scrollTop = 0;
@@ -60,21 +62,25 @@ async function boot() {
   bar.className = "tabbar";
   app.append(view, bar);
   on(bar, { tab: (b) => { tg?.HapticFeedback?.selectionChanged?.(); go(b.dataset.id); } });
-  onState(renderBar);
+  onState(() => {
+    renderBar();
+    if (lastGame && S.game !== lastGame && current) go(current);   // сменили игру — перерисовать вкладку
+  });
 
-  // deep links: ?s=m12 (чат), s5 (отряд), p7 (пост), likes, duet  — из уведомлений бота
+  // deep links из уведомлений: m12 чат, s5 отряд, p7 пост, t3 турнир, likes, duet, home
   const sp = new URLSearchParams(location.search).get("s") || tg?.initDataUnsafe?.start_param || "";
   let start = null;
   try { start = localStorage.getItem("lera_tab"); } catch {}
-  if (/^m\d+$/.test(sp)) { go("chats"); chats.openMatch(+sp.slice(1)); }
-  else if (/^s\d+$/.test(sp)) { go("squads"); squads.openSquad(+sp.slice(1)); }
+  if (!S.me.profile_done) { go("profile"); profile.openEditor(true); }
+  else if (/^m\d+$/.test(sp)) { go("chats"); chats.openMatch(+sp.slice(1)); }
+  else if (/^s\d+$/.test(sp)) { go("mates", "squads"); const { openSquad } = await import("./pages/squads.js"); openSquad(+sp.slice(1)); }
   else if (/^p\d+$/.test(sp)) { go("feed"); feed.openComments(+sp.slice(1)); }
-  else if (sp === "likes") go("duet", "likes");
-  else if (sp === "duet") go("duet");
-  else if (!S.me.profile_done) { go("profile"); profile.openEditor(true); }
-  else go(TABS.some((t) => t.id === start) ? start : "duet");
+  else if (/^t\d+$/.test(sp)) { go("home"); const { openTournament } = await import("./pages/more.js"); openTournament(+sp.slice(1)); }
+  else if (sp === "likes") go("mates", "likes");
+  else if (sp === "duet") go("mates");
+  else if (sp === "home") go("home");
+  else go(TABS.some((t) => t.id === start) ? start : "home");
 
-  // присутствие + счётчики
   setInterval(async () => {
     if (document.hidden) return;
     try { S.unread = await api("/api/ping", { method: "POST" }); emit(); } catch {}
