@@ -1,6 +1,7 @@
 """v8: про-сцена — матчи с PandaScore/Liquipedia, прогнозы на несо, подписки на матчи и команды, обсуждение."""
 import asyncio
 import json
+import re
 import logging
 import time
 from datetime import timedelta
@@ -47,11 +48,44 @@ async def init():
 
 # ── загрузка ─────────────────────────────────────────────────────────────
 
+_STOP = {"team", "esports", "esport", "gaming", "club", "gg", "e", "sports"}
+
+
+def norm_team(name: str) -> str:
+    words = re.findall(r"[a-zа-я0-9]+", (name or "").lower())
+    return "".join(w for w in words if w not in _STOP) or "".join(words)
+
+
+def same_team(a: str, b: str) -> bool:
+    x, y = norm_team(a), norm_team(b)
+    return bool(x and y) and (x == y or (min(len(x), len(y)) >= 3 and (x in y or y in x)))
+
+
+async def duplicate_of(r: dict) -> bool:
+    """Матч из Liquipedia уже есть из PandaScore (та же игра, ±3 часа, те же команды)?"""
+    if r["source"] != "liquipedia" or not r.get("game"):
+        return False
+    rows = await db.all_("SELECT team_a, team_b, acr_a, acr_b FROM pro_matches WHERE source='pandascore' AND game=? "
+                         "AND begin_at BETWEEN datetime(?, '-3 hours') AND datetime(?, '+3 hours')", r["game"], r["begin_at"], r["begin_at"])
+    for x in rows:
+        acr = {(x["acr_a"] or "").upper(), (x["acr_b"] or "").upper()}
+        if len({(r.get("acr_a") or "").upper(), (r.get("acr_b") or "").upper()} & acr - {""}) == 2:
+            return True
+        if (same_team(x["team_a"], r["team_a"]) and same_team(x["team_b"], r["team_b"])) or \
+           (same_team(x["team_a"], r["team_b"]) and same_team(x["team_b"], r["team_a"])):
+            return True
+    return False
+
+
 async def upsert(rows: list[dict]) -> int:
     n = 0
     now = sqlts(utcnow())
     for r in rows:
         if not r.get("begin_at"):
+            continue
+        if await duplicate_of(r):
+            await db.run("DELETE FROM pro_matches WHERE ext=? AND id NOT IN (SELECT match_id FROM pro_preds) "
+                         "AND id NOT IN (SELECT match_id FROM pro_comments)", r["id"])
             continue
         old = await db.one("SELECT * FROM pro_matches WHERE ext=?", r["id"])
         vals = [r.get(f) for f in FIELDS]
@@ -101,8 +135,6 @@ async def refresh_pandascore(client):
 
 
 async def refresh_wiki(client, wiki: str):
-    if E.LQ_WIKI.get(wiki) and E.LQ_WIKI[wiki] in await ps_games():
-        return   # эту игру уже покрывает PandaScore — без дублей
     try:
         rows = await E.fetch_liquipedia(client, wiki)
         await source_ok(f"liquipedia:{wiki}", await upsert(rows))

@@ -63,8 +63,11 @@ export function openTournaments(mode = "pro") {
       const b = el.querySelector("#tb");
       if (!data) mount(b, html`<div class="spinner"></div>`);
       try { data = await api(`/api/pro?tab=${tab}&game=${game}`); } catch (e) { return fail(e); }
-      // если сейчас ничего не идёт — сразу показать ближайшие
-      if (auto && tab === "live" && !data.matches.length && data.counts.soon) { auto = false; tab = "soon"; return loadPro(); }
+      // ничего не идёт — показать ближайшие прямо под сообщением
+      data.next = [];
+      if (tab === "live" && !data.matches.length && data.counts.soon) {
+        try { data.next = (await api(`/api/pro?tab=soon&game=${game}`)).matches.slice(0, 5); } catch {}
+      }
       auto = false;
       drawPro();
     }
@@ -88,6 +91,9 @@ export function openTournaments(mode = "pro") {
           <div class="chips scroll" style="margin-top:12px">${gchips.map(([k, t]) => html`<button class="chip ${game === k ? "on" : ""}" data-act="game" data-v="${k}">${t}</button>`)}</div></div>
         ${groups.length ? groups.map((g) => html`<div class="pad pm-day"><span>${g.k}</span><span class="mono">${g.ms.length}</span></div>
           <div class="pad stack">${g.ms.map((m) => pmCard(m))}</div>`)
+          : data.next?.length ? html`<div class="pad" style="margin-top:18px">${leraSays(`${empty} Ближайшие матчи:`)}</div>
+              <div class="pad stack" style="margin-top:12px">${data.next.map((m) => pmCard(m))}</div>
+              <div class="pad" style="margin-top:10px"><button class="btn dark wide" data-act="tab" data-v="soon">все ближайшие · ${data.counts.soon}</button></div>`
           : html`<div class="empty">${leraSays(`${empty} ${data.sources.length ? "" : "Источники ещё загружаются — первые матчи появятся в течение 15 минут после запуска."}`)}</div>`}
         <p class="pad small muted center" style="margin-top:20px">🔮 Прогнозы на несо до начала матча · 🔔 уведомления о старте и результате<br>
           данные: ${data.sources.includes("pandascore") ? "PandaScore, " : ""}Liquipedia (CC-BY-SA)</p><div class="sp"></div>`);
