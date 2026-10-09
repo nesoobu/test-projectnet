@@ -261,6 +261,15 @@ CREATE TABLE IF NOT EXISTS leradle2 (
     tg_id INTEGER NOT NULL, day TEXT NOT NULL, game TEXT NOT NULL, guesses TEXT NOT NULL DEFAULT '[]',
     solved INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (tg_id, day, game)
 );
+CREATE TABLE IF NOT EXISTS wiki_tier (game TEXT NOT NULL, hero TEXT NOT NULL, tg_id INTEGER NOT NULL, tier INTEGER NOT NULL,
+    PRIMARY KEY (game, hero, tg_id));
+CREATE TABLE IF NOT EXISTS wiki_tips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT NOT NULL, hero TEXT NOT NULL, author INTEGER NOT NULL, text TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS wiki_tips_h ON wiki_tips(game, hero);
+CREATE TABLE IF NOT EXISTS wiki_tip_likes (tip_id INTEGER NOT NULL, tg_id INTEGER NOT NULL, PRIMARY KEY (tip_id, tg_id));
+CREATE TABLE IF NOT EXISTS guide_likes (guide_id INTEGER NOT NULL, tg_id INTEGER NOT NULL, PRIMARY KEY (guide_id, tg_id));
 CREATE TABLE IF NOT EXISTS t_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT, tid INTEGER NOT NULL, sender INTEGER NOT NULL, text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -300,6 +309,8 @@ COLUMNS = [
     ("t_matches", "reported_at", "TEXT"),
     ("t_matches", "disputed", "INTEGER NOT NULL DEFAULT 0"),
     ("t_matches", "proof", "TEXT"),
+    ("guides", "hero", "TEXT"),
+    ("guides", "cat", "TEXT NOT NULL DEFAULT 'other'"),
 ]
 
 

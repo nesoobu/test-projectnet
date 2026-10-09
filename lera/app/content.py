@@ -299,8 +299,9 @@ GAMES["genshin"]["heroes"] = (
 )
 GAMES["cs2"]["heroes"] = _h("Mirage, Inferno, Nuke, Ancient, Anubis, Dust II, Train, Vertigo, Overpass", "Карта", None)
 GAMES["pubgm"]["heroes"] = _h("Erangel, Miramar, Sanhok, Vikendi, Livik", "Карта", None)
+GAMES["so2"]["heroes"] = _h("Sandstone, Rust, Province, Zone 9, Sakura, Breeze, Dune, Hanami", "Карта", None)
 
 # как называть сущности в вики и Лерадле
 ENTITY = {"hok": "Герои", "mlbb": "Герои", "dota2": "Герои", "valorant": "Агенты", "brawl": "Бойцы",
-          "genshin": "Персонажи", "cs2": "Карты", "pubgm": "Карты"}
+          "genshin": "Персонажи", "cs2": "Карты", "so2": "Карты", "pubgm": "Карты"}
 LERADLE_GAMES = [g for g in ("hok", "mlbb", "dota2", "valorant", "brawl", "genshin")]

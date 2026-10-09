@@ -98,7 +98,7 @@ export function render(root) {
       ${T.length ? html`<div class="pad stack">${T.map((t) => tourCard(t))}</div>`
         : html`<div class="pad"><button class="card line wide-card" data-act="tours">${icon("swords")}<span class="grow muted">Пока турниров нет. Загляни позже — или напиши админу, чтобы устроил.</span></button></div>`}
       <div class="tiles">
-        <button class="tile" data-act="wiki">${icon("book")}<div><b>Вики ${g.short}</b><div class="sub">${g.heroes ? "герои и гайды" : "гайды игроков"}</div></div></button>
+        <button class="tile" data-act="wiki">${icon("book")}<div><b>Вики ${g.short}</b><div class="sub">${g.heroes ? "тир-лист, гайды, советы" : "роли, словарь, гайды"}</div></div></button>
         <button class="tile" data-act="top">${icon("trophy")}<div><b>Топ игроков</b><div class="sub">xp, стрики, лайки</div></div></button>
         <button class="tile wide" data-act="rate">${icon("thumb")}<div class="grow"><b>Оцени тиммейтов</b><div class="sub">отзывы → репутация в анкете. +3 xp за каждый</div></div></button>
       </div>`;

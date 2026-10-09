@@ -14,7 +14,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from . import content as C, db, notify
+from . import content as C, db, notify, wiki_content as W
 from .main import (MSK, Me, _h, add_balance, add_xp, bump_quest, get_or_create_match, is_online, jl, people,
                    spend, sqlts, today, utcnow, yday)
 
@@ -379,21 +379,45 @@ async def achievements(user: int = 0, me=Me):
 
 # ── вики ─────────────────────────────────────────────────────────────────
 
+async def tier_map(game: str) -> dict:
+    out = {}
+    for r in await db.all_("SELECT hero, AVG(tier) a, COUNT(*) n FROM wiki_tier WHERE game=? GROUP BY hero", game):
+        out[r["hero"]] = {"tier": W.TIERS[min(4, int(r["a"] + 0.5))], "score": round(r["a"], 2), "votes": r["n"]}
+    return out
+
+
+async def guide_rows(uid: int, where: str, *args) -> list:
+    rows = await db.all_("SELECT g.id, g.game, g.title, g.author, g.views, g.created_at, g.hero, g.cat, substr(g.body,1,140) AS preview, "
+                         "(SELECT COUNT(*) FROM guide_likes l WHERE l.guide_id=g.id) AS likes, "
+                         "EXISTS(SELECT 1 FROM guide_likes l WHERE l.guide_id=g.id AND l.tg_id=?) AS liked "
+                         f"FROM guides g WHERE g.status='approved' AND {where} ORDER BY likes DESC, g.views DESC, g.id DESC LIMIT 100", uid, *args)
+    ppl = await people({r["author"] for r in rows})
+    return [{**r, "author": ppl.get(r["author"]), "liked": bool(r["liked"])} for r in rows]
+
+
 @router.get("/wiki")
 async def wiki(game: str, me=Me):
     g = need_game(game)
+    info = W.WIKI.get(game, {})
     heroes = None
     if g.get("heroes"):
         pop: dict = {}
         for r in await db.all_("SELECT heroes FROM user_games WHERE game=? AND heroes != '[]'", game):
             for h in jl(r["heroes"]):
                 pop[h] = pop.get(h, 0) + 1
-        heroes = [{"name": n, "cls": c, "lane": l, "lane_name": g["roles"].get(l, l), "mains": pop.get(n, 0)}
-                  for n, c, l in g["heroes"]]
-    rows = await db.all_("SELECT id, title, author, views, created_at, substr(body,1,140) AS preview FROM guides "
-                         "WHERE game=? AND status='approved' ORDER BY views DESC, id DESC LIMIT 100", game)
-    ppl = await people({r["author"] for r in rows})
-    return {"heroes": heroes, "guides": [{**r, "author": ppl.get(r["author"])} for r in rows]}
+        tiers = await tier_map(game)
+        heroes = [{"name": n, "cls": c, "lane": l, "lane_name": g["roles"].get(l) if l else None, "mains": pop.get(n, 0),
+                   **tiers.get(n, {"tier": None, "score": None, "votes": 0})} for n, c, l in g["heroes"]]
+    roles = [{"key": k, "name": v, "desc": info.get("roles", {}).get(k, ""),
+              "players": await db.val("SELECT COUNT(*) FROM user_games WHERE game=? AND roles LIKE ?", game, f'%"{k}"%')}
+             for k, v in g["roles"].items()]
+    return {"game": game, "entity": C.ENTITY.get(game, "Герои"), "about": info.get("about", ""), "roles": roles,
+            "ranks": g["ranks"], "modes": list(g["modes"].values()), "glossary": info.get("glossary", []),
+            "basics": info.get("basics", []), "cats": W.GUIDE_CATS, "heroes": heroes,
+            "guides": await guide_rows(me["tg_id"], "g.game=?", game),
+            "stats": {"players": await db.val("SELECT COUNT(*) FROM user_games WHERE game=?", game),
+                      "tips": await db.val("SELECT COUNT(*) FROM wiki_tips WHERE game=?", game),
+                      "voters": await db.val("SELECT COUNT(DISTINCT tg_id) FROM wiki_tier WHERE game=?", game)}}
 
 
 @router.get("/wiki/guides/{gid}")
@@ -402,21 +426,28 @@ async def guide(gid: int, me=Me):
     if not r or (r["status"] != "approved" and r["author"] != me["tg_id"] and not me["is_admin"]):
         raise HTTPException(404, "Гайд не найден")
     await db.run("UPDATE guides SET views = views + 1 WHERE id=?", gid)
-    return {**r, "author": (await people([r["author"]])).get(r["author"])}
+    likes = await db.val("SELECT COUNT(*) FROM guide_likes WHERE guide_id=?", gid)
+    liked = bool(await db.one("SELECT 1 FROM guide_likes WHERE guide_id=? AND tg_id=?", gid, me["tg_id"]))
+    return {**r, "author": (await people([r["author"]])).get(r["author"]), "likes": likes, "liked": liked,
+            "cat_name": W.GUIDE_CATS.get(r.get("cat") or "other")}
 
 
 class GuideIn(BaseModel):
     game: str
     title: str = Field(min_length=4, max_length=80)
     body: str = Field(min_length=40, max_length=8000)
+    hero: str | None = None
+    cat: str = "other"
 
 
 @router.post("/wiki/guides")
 async def guide_add(body: GuideIn, me=Me):
     g = need_game(body.game)
     status = "approved" if me["is_admin"] else "pending"
-    gid = await db.run("INSERT INTO guides (game, author, title, body, status) VALUES (?,?,?,?,?)",
-                       body.game, me["tg_id"], body.title.strip(), body.body.strip(), status)
+    hero = body.hero if body.hero in {h[0] for h in g.get("heroes") or []} else None
+    cat = body.cat if body.cat in W.GUIDE_CATS else "other"
+    gid = await db.run("INSERT INTO guides (game, author, title, body, status, hero, cat) VALUES (?,?,?,?,?,?,?)",
+                       body.game, me["tg_id"], body.title.strip(), body.body.strip(), status, hero, cat)
     if status == "pending":
         from . import config
         for a in config.ADMIN_IDS:

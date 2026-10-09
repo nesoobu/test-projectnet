@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import wiki_content as W
 from . import config, content as C, db, notify
 from .auth import validate_init_data
 from .realtime import hub
@@ -327,7 +328,7 @@ async def bootstrap(me=Me):
                           "roles": g["roles"], "modes": g["modes"], "heroes": bool(g.get("heroes"))}
                       for k, g in C.GAMES.items()},
             "review_tags": C.REVIEW_TAGS, "weekend": is_weekend(), "clan_cost": C.CLAN_COST,
-            "entity": C.ENTITY, "leradle_games": C.LERADLE_GAMES,
+            "entity": C.ENTITY, "leradle_games": C.LERADLE_GAMES, "guide_cats": W.GUIDE_CATS,
         },
     }
 
@@ -1215,6 +1216,10 @@ app.include_router(v5.router)
 from . import v6  # noqa: E402
 
 app.include_router(v6.router)
+
+from . import v7  # noqa: E402
+
+app.include_router(v7.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────
