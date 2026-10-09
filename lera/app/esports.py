@@ -142,8 +142,12 @@ def lq_parse(html_text: str, wiki: str, now: datetime | None = None) -> list[dic
             ts = int(timer["data-timestamp"])
         except (ValueError, KeyError):
             continue
-        left = bl.select_one(".team-left, .match-info-header-opponent-left, .match-info-opponent-left")
-        right = bl.select_one(".team-right, .match-info-header-opponent-right, .match-info-opponent-right")
+        opps = bl.select(".match-info-header-opponent")   # новая разметка: правая сторона без класса -right
+        if len(opps) >= 2:
+            left, right = opps[0], opps[1]
+        else:
+            left = bl.select_one(".team-left, .match-info-opponent-left")
+            right = bl.select_one(".team-right, .match-info-opponent-right")
         a, b = _team(left), _team(right)
         if not a or not b or a.upper() == "TBD" and b.upper() == "TBD":
             continue
@@ -191,7 +195,7 @@ def lq_parse(html_text: str, wiki: str, now: datetime | None = None) -> list[dic
 
 async def fetch_liquipedia(client: httpx.AsyncClient, wiki: str) -> list[dict]:
     r = await client.get(f"https://liquipedia.net/{wiki}/api.php",
-                         params={"action": "parse", "page": "Liquipedia:Matches", "format": "json", "prop": "text"},
+                         params={"action": "parse", "page": "Liquipedia:Matches", "format": "json", "prop": "text", "redirects": 1},
                          headers={"User-Agent": UA, "Accept-Encoding": "gzip"})
     r.raise_for_status()
     data = r.json()
