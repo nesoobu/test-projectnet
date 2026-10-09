@@ -88,7 +88,10 @@ export function render(root) {
   }
 
   function draw() {
-    mount(box, html`<div class="pad">${readyBlock()}</div>${dailyBlock()}${pollBlock()}${tourBlock()}<div class="sp"></div>`);
+    mount(box, html`<div class="pad">${readyBlock()}
+      <button class="ask-lera" data-act="ai"><div class="lera"><div class="face">Л</div></div>
+        <div class="grow" style="text-align:left"><b>Спроси Леру</b><div class="small muted">роли, герои, тактика, тильт — ИИ-помощник</div></div>${icon("send", 'width="18" height="18"')}</button>
+    </div>${dailyBlock()}${pollBlock()}${tourBlock()}<div class="sp"></div>`);
   }
 
   async function lazy(name) { return import("./more.js").then((m) => m[name]); }
@@ -121,6 +124,7 @@ export function render(root) {
     wiki: async () => (await lazy("openWiki"))(),
     top: async () => (await lazy("openTop"))(),
     rate: async () => (await lazy("openRate"))(),
+    ai: async () => (await import("./ai.js")).openAI(),
   });
   const unsub = onState(() => data && draw());
   load();

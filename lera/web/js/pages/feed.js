@@ -1,5 +1,6 @@
 import { S, tg, api, html, mount, on, icon, avatar, nameEl, ago, sheet, leraSays, fail, toast, haptic, safeUrl, confirmSheet, pushScreen, GI, gameBadge } from "../core.js";
 import { gameSwitch } from "../games.js";
+import { clipsGrid } from "./clips.js";
 import { openPerson } from "./person.js";
 
 export async function uploadImage(file) {
@@ -41,12 +42,21 @@ export function render(root) {
   const drawSeg = () => mount(root.querySelector("#seg"), html`
     <button class="${tab === "new" ? "on" : ""}" data-act="tab" data-t="new">Свежее</button>
     <button class="${tab === "top" ? "on" : ""}" data-act="tab" data-t="top">Топ недели</button>
-    <button class="${tab === "news" ? "on" : ""}" data-act="tab" data-t="news">Новости</button>`);
+    <button class="${tab === "news" ? "on" : ""}" data-act="tab" data-t="news">Новости</button>
+    <button class="${tab === "clips" ? "on" : ""}" data-act="tab" data-t="clips">Клипы</button>`);
   const drawScope = () => mount(root.querySelector("#scope"), html`
     <button class="chip ${scope === "game" ? "on" : ""}" data-act="scope" data-v="game">${GI().short}</button>
     <button class="chip ${scope === "all" ? "on" : ""}" data-act="scope" data-v="all">Все игры</button>`);
 
+  let clipsOff = null;
   async function load(reset = true) {
+    clipsOff?.(); clipsOff = null;
+    root.querySelector(".compose-card").style.display = tab === "clips" ? "none" : "";
+    if (tab === "clips") {
+      drawSeg(); drawScope(); mount(more, "");
+      clipsOff = clipsGrid(box, { scope });
+      return;
+    }
     if (loading) return;
     loading = true;
     if (reset) { posts = []; end = false; mount(box, html`<div class="spinner"></div>`); }
@@ -78,7 +88,7 @@ export function render(root) {
     ...postActions(() => posts, (fn) => { posts = fn(posts); draw(); }),
   });
   load();
-  return off;
+  return () => { off(); clipsOff?.(); };
 }
 
 export function postActions(getPosts, update) {

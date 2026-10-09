@@ -22,6 +22,8 @@ ONLINE_WINDOW = 5 * 60
 async def lifespan(_app):
     config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     await db.connect()
+    from .v4 import init as v4_init
+    await v4_init()
     from .v2 import background_loop
     task = asyncio.create_task(background_loop())
     yield
@@ -1164,6 +1166,10 @@ app.include_router(v2.router)
 from . import v3  # noqa: E402
 
 app.include_router(v3.router)
+
+from . import v4  # noqa: E402
+
+app.include_router(v4.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────

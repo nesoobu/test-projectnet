@@ -132,6 +132,8 @@ async def background_loop():
                 now = datetime.now(MSK)
                 if now.weekday() == 0 and now.hour >= 12:
                     await weekly_digest()
+                    from .v4 import weekly_clip
+                    await weekly_clip()
                 await db.run("DELETE FROM ready WHERE until < datetime('now')")
                 await db.run("DELETE FROM notify_log WHERE kind != 'ready_self' AND at < datetime('now','-2 days')")
             except asyncio.CancelledError:
@@ -660,6 +662,8 @@ async def tour_winner(tid: int, mid: int, body: WinIn, me=Me):
     if body.team not in (m["team_a"], m["team_b"]) or not (m["team_a"] and m["team_b"]):
         raise HTTPException(400, "Эта команда не играет в матче")
     await advance(t, m, body.team)
+    from .v4 import settle_predictions
+    await settle_predictions(t, mid, body.team)
     return {"ok": True}
 
 

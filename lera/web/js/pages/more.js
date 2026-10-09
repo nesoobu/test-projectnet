@@ -339,11 +339,25 @@ export function openTournaments() {
 
 export function openTournament(id, onChange) {
   pushScreen((el, pop) => {
-    let t = null;
+    let t = null, preds = {};
     const load = async () => {
-      try { t = await api(`/api/tournaments/${id}`); } catch (e) { fail(e); return pop(); }
+      try {
+        t = await api(`/api/tournaments/${id}`);
+        preds = t.status === "live" || t.status === "done" ? (await api(`/api/tournaments/${id}/predictions`)).predictions : {};
+      } catch (e) { fail(e); return pop(); }
       draw();
     };
+    function predLine(m) {
+      const p = preds[m.id];
+      const a = p?.teams?.[m.team_a]?.stake || 0, b2 = p?.teams?.[m.team_b]?.stake || 0;
+      const open = t.status === "live" && !m.winner && m.team_a && m.team_b;
+      const mineTeam = t.my_team === m.team_a || t.my_team === m.team_b;
+      if (!open && !p) return "";
+      return html`<div class="b-pred">${a + b2 ? html`<div class="b-pool"><i style="width:${Math.round((a / (a + b2)) * 100)}%"></i></div>
+          <span class="mono">${a} : ${b2}</span>` : html`<span class="muted">пул пуст</span>`}
+        ${p?.mine ? html`<span class="tag ${p.mine.payout ? "acc" : ""}">${p.mine.payout != null ? (p.mine.payout ? `+${p.mine.payout}` : "мимо") : `ставка ${p.mine.stake}`}</span>`
+          : open && !mineTeam ? html`<button class="tag acc" data-act="predict" data-m="${m.id}">прогноз</button>` : ""}</div>`;
+    }
     const teamName = (tid) => t.teams.find((x) => x.id === tid)?.name || "—";
     function bracket() {
       if (!t.matches.length) return "";
@@ -356,7 +370,9 @@ export function openTournament(id, onChange) {
             ${[m.team_a, m.team_b].map((tm) => html`<button class="b-team ${m.winner && m.winner === tm ? "win" : ""} ${tm && tm === t.my_team ? "mine" : ""}"
               ${S.me.is_admin && t.status === "live" && !m.winner && m.team_a && m.team_b ? raw(`data-act="win" data-m="${m.id}" data-t="${tm}"`) : ""}>
               <span class="ell">${tm ? teamName(tm) : i === 0 ? "—" : "…"}</span>${m.winner && m.winner === tm ? icon("check", 'width="14" height="14"') : ""}</button>`)}
+            ${predLine(m)}
           </div>`)}</div>`)}</div>
+        ${t.status === "live" ? html`<p class="pad muted small">🔮 Прогнозы: ставь несо на победителя матча. Проигравшие ставки делятся между угадавшими.</p>` : ""}
         ${S.me.is_admin && t.status === "live" ? html`<p class="pad muted small">Админ: тапни по команде в матче, чтобы отметить победителя.</p>` : ""}`;
     }
     function draw() {
@@ -416,6 +432,26 @@ export function openTournament(id, onChange) {
       leave: async () => { if (!(await confirmSheet("Выйти из турнира?", "Место освободится для других.", "выйти", true))) return; try { await api(`/api/tournaments/${id}/leave`, { method: "POST" }); load(); onChange?.(); } catch (e) { fail(e); } },
       start: async () => { if (!(await confirmSheet("Запустить сетку?", "Регистрация закроется, участники получат уведомление.", "запустить"))) return; try { await api(`/api/tournaments/${id}/start`, { method: "POST" }); haptic.ok(); load(); } catch (e) { fail(e); } },
       cancel: async () => { if (!(await confirmSheet("Отменить турнир?", "Он пропадёт из списка.", "отменить", true))) return; try { await api(`/api/tournaments/${id}`, { method: "DELETE" }); onChange?.(); pop(); } catch (e) { fail(e); } },
+      predict: (b) => {
+        const m = t.matches.find((x) => x.id === +b.dataset.m);
+        let team = m.team_a, stake = 50;
+        sheet((sh, close) => {
+          const draw2 = () => mount(sh, html`<h2 class="h2" style="margin-bottom:6px">прогноз на матч</h2>
+            <p class="muted small" style="margin:0 0 14px">Угадаешь — заберёшь долю ставок проигравших. Баланс: <span class="coin">${S.me.balance}</span></p>
+            <div class="stack">${[m.team_a, m.team_b].map((x) => html`<button class="btn wide ${team === x ? "" : "dark"}" data-act="tm" data-v="${x}">${teamName(x)}</button>`)}</div>
+            <div class="field" style="margin-top:16px"><span class="lbl">ставка</span><div class="seg">${[10, 50, 100, 250, 500].map((v) => html`<button class="${stake === v ? "on" : ""}" data-act="st" data-v="${v}">${v}</button>`)}</div></div>
+            <button class="btn wide" data-act="ok">${icon("sparkle")}поставить ${stake} несо</button>`);
+          draw2();
+          on(sh, {
+            tm: (x) => { team = +x.dataset.v; haptic.sel(); draw2(); },
+            st: (x) => { stake = +x.dataset.v; haptic.sel(); draw2(); },
+            ok: async () => {
+              try { await api(`/api/tournaments/${id}/matches/${m.id}/predict`, { method: "POST", body: { team, stake } }); haptic.ok(); toast("Прогноз принят!", "ok"); close(); refreshMe(); load(); }
+              catch (e) { fail(e); }
+            },
+          });
+        });
+      },
       win: async (b) => {
         const name = teamName(+b.dataset.t);
         if (!(await confirmSheet(`Победа: ${name}?`, "Отменить нельзя.", "да"))) return;
