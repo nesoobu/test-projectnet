@@ -242,7 +242,7 @@ async def ready_set(body: ReadyIn, me=Me):
                 + (f"\n{_h(' · '.join(bits))}" if bits else "") + note)
         rows = await db.all_(
             "SELECT ug.tg_id FROM user_games ug JOIN users u ON u.tg_id=ug.tg_id "
-            "WHERE ug.game=? AND ug.tg_id NOT IN (?, 0) AND u.mute_ready=0 AND u.last_seen > datetime('now','-14 days') "
+            "WHERE ug.game=? AND ug.tg_id NOT IN (?, 0) AND u.mute_ready=0 AND u.banned=0 AND u.last_seen > datetime('now','-14 days') "
             "AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.from_id=ug.tg_id AND b.to_id=?) OR (b.from_id=? AND b.to_id=ug.tg_id)) "
             "AND NOT EXISTS (SELECT 1 FROM notify_log n WHERE n.tg_id=ug.tg_id AND n.kind='ready' AND n.at > datetime('now','-3 hours')) "
             "ORDER BY u.last_seen DESC LIMIT 40", body.game, uid, uid, uid)

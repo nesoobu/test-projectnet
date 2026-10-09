@@ -208,3 +208,46 @@ NEGATIVE_TAGS = {"toxic", "afk", "noob"}
 
 QUESTS["leradle"] = ("Разгадай Лерадл", 1, 30)
 QUESTS["ready"] = ("Нажми «Готов играть»", 1, 15)
+
+
+# ── Боевой пропуск ────────────────────────────────────────────────────────
+# Сезон = календарный месяц. Опыт пропуска копится вместе с обычным xp.
+BP_LEVELS = 30
+BP_XP_PER_LEVEL = 40
+BP_STARS = 149            # цена премиум-линейки на сезон (Lera Premium открывает её бесплатно)
+
+ITEMS.update({
+    "frame_season":  ("Сезонный огонь", "frame", "epic", None),
+    "color_season":  ("Сезонный градиент", "color", "epic", None),
+    "title_season":  ("Ветеран сезона", "title", "epic", None),
+    "banner_season": ("Сезонный неон", "banner", "legendary", None),
+})
+BP_ONLY = {"frame_season", "color_season", "title_season", "banner_season"}
+
+
+def bp_reward(level: int, track: str) -> tuple:
+    """(тип, значение): nesso/ticket/item."""
+    if track == "free":
+        if level == 30:
+            return ("item", "title_season")
+        if level % 5 == 0:
+            return ("ticket", 1)
+        return ("nesso", 20 + level * 2)
+    special = {10: "frame_season", 20: "color_season", 30: "banner_season"}
+    if level in special:
+        return ("item", special[level])
+    if level % 3 == 0:
+        return ("ticket", 1)
+    return ("nesso", 50 + level * 4)
+
+
+# ── Кланы ─────────────────────────────────────────────────────────────────
+CLAN_COST = 500
+CLAN_COLORS = ["#d4ff3f", "#ff6fa5", "#7cc8ff", "#ffc64a", "#b48cff", "#ff7a59", "#5ef0c1", "#efeae0"]
+CLAN_ROLES = {"owner": "Лидер", "officer": "Офицер", "member": "Боец"}
+
+
+def clan_level(xp: int) -> dict:
+    import math
+    lvl = int(math.sqrt(max(xp, 0) / 200)) + 1
+    return {"level": lvl, "xp": xp, "from": 200 * (lvl - 1) ** 2, "to": 200 * lvl ** 2, "max_members": min(50, 18 + 2 * lvl)}

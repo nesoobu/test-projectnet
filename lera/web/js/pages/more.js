@@ -1,5 +1,5 @@
 // Квесты, гача, магазин, инвентарь, топ, вики, premium, рефералка, помощь, админка
-import { S, tg, api, html, raw, mount, on, icon, avatar, nameEl, refreshMe, pushScreen, sheet, toast, fail, haptic, leraSays, rankName, emit, GI, myGame, gameBadge, confirmSheet } from "../core.js";
+import { S, tg, api, html, raw, mount, on, icon, avatar, nameEl, refreshMe, pushScreen, sheet, toast, fail, haptic, leraSays, rankName, emit, GI, myGame, gameBadge, confirmSheet, plural } from "../core.js";
 import { openPerson } from "./person.js";
 
 const RAR = { common: "обычный", rare: "редкий", epic: "эпик", legendary: "легенда" };
@@ -626,100 +626,412 @@ export function openHelp() {
   });
 }
 
+// ─── боевой пропуск ───
+const REWARD_IC = { nesso: "coin", ticket: "gift", item: "sparkle" };
+function rewardLabel(r) {
+  return r.kind === "nesso" ? `${r.value}` : r.kind === "ticket" ? `${r.value} тикет` : r.name;
+}
+
+export function openPass(onDone) {
+  pushScreen((el, pop) => {
+    let p = null;
+    const load = async () => { try { p = await api("/api/pass"); } catch (e) { fail(e); return pop(); } draw(); };
+    function cell(l, track) {
+      const r = l[track], open = l.level <= p.level, locked = track === "premium" && !p.unlocked;
+      const can = open && !r.claimed && !locked;
+      return html`<button class="bp-cell ${track} ${r.claimed ? "got" : can ? "can" : ""} ${locked ? "locked" : ""} ${r.rarity ? `r-${r.rarity}` : ""}"
+        ${can ? raw(`data-act="claim" data-l="${l.level}" data-t="${track}"`) : ""}>
+        ${r.kind === "item" ? html`<div class="bp-item">${preview({ id: r.value, kind: r.item_kind, name: r.name })}</div>` : icon(REWARD_IC[r.kind], 'width="20" height="20"')}
+        <span class="bp-val">${rewardLabel(r)}${r.kind === "nesso" ? " несо" : ""}</span>
+        ${r.claimed ? html`<i class="bp-ok">${icon("check", 'width="12" height="12" stroke-width="3"')}</i>` : locked ? html`<i class="bp-ok lock">🔒</i>` : ""}</button>`;
+    }
+    function draw() {
+      const inLvl = p.level >= p.max ? p.per_level : p.xp % p.per_level;
+      const left = Math.max(0, Math.ceil((new Date(p.ends_at) - Date.now()) / 864e5));
+      mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker grow">сезон ${p.season_name} · ещё ${left} ${plural(left, "день", "дня", "дней")}</span></div>
+        <div class="pad">
+          <div class="bp-hero">
+            <div class="kicker" style="color:inherit;opacity:.7">боевой пропуск</div>
+            <div class="row" style="align-items:flex-end;margin-top:8px"><div class="bp-lvl">${p.level}</div><div class="grow" style="padding-bottom:8px">
+              <div class="small" style="opacity:.75">уровень из ${p.max}</div>
+              <div class="bp-track"><i style="width:${Math.round((inLvl / p.per_level) * 100)}%"></i></div>
+              <div class="small mono" style="opacity:.75;margin-top:6px">${p.level >= p.max ? "максимум!" : `${inLvl} / ${p.per_level} xp до ${p.level + 1}`}</div></div></div>
+          </div>
+          ${p.ready ? html`<button class="btn wide" style="margin-top:12px" data-act="all">${icon("gift")}забрать всё · ${p.ready}</button>` : ""}
+          ${!p.unlocked ? html`<button class="btn wide" style="margin-top:10px;background:var(--gold);color:#1a1200" data-act="buy">${icon("crown")}открыть премиум-линейку · ${p.stars} ⭐</button>
+            <p class="muted small" style="margin:8px 0 0">С Lera Premium премиум-линейка открыта бесплатно. Награды за уже пройденные уровни можно забрать сразу.</p>` : ""}
+          <p class="muted small" style="margin:12px 0 0">Опыт пропуска — это любой xp в Лере: ежедневка, квесты, Лерадл, мэтчи, отряды, посты, турниры.</p>
+        </div>
+        <div class="bp-grid-head pad"><span></span><span class="kicker">бесплатно</span><span class="kicker" style="color:var(--gold)">премиум</span></div>
+        <div class="pad bp-grid">${p.levels.map((l) => html`<div class="bp-row ${l.level <= p.level ? "open" : ""} ${l.level === p.level + 1 ? "next" : ""}">
+          <span class="bp-n">${l.level}</span>${cell(l, "free")}${cell(l, "premium")}</div>`)}</div><div class="sp"></div>`);
+    }
+    load();
+    return on(el, {
+      back: () => { pop(); onDone?.(); },
+      claim: async (b) => {
+        try { const r = await api("/api/pass/claim", { method: "POST", body: { level: +b.dataset.l, track: b.dataset.t } }); haptic.ok(); toast(`+ ${r.got.join(", ")}`, "ok"); refreshMe(); load(); }
+        catch (e) { fail(e); }
+      },
+      all: async () => {
+        try { const r = await api("/api/pass/claim", { method: "POST", body: { track: "all" } }); haptic.ok(); toast(r.got.length ? `Получено наград: ${r.got.length}` : "Нечего забирать", "ok"); refreshMe(); load(); }
+        catch (e) { fail(e); }
+      },
+      buy: async () => {
+        try {
+          const { link } = await api("/api/pay/invoice", { method: "POST", body: { pack: "pass" } });
+          if (!tg?.openInvoice) return window.open(link);
+          tg.openInvoice(link, (status) => { if (status === "paid") { haptic.ok(); toast("Премиум-линейка открыта!", "ok"); setTimeout(load, 1500); } });
+        } catch (e) { fail(e); }
+      },
+    });
+  });
+}
+
 // ─── админка ───
+const bars = (rows, color = "var(--acc)") => {
+  const max = Math.max(1, ...rows.map((r) => r.n));
+  return html`<div class="chart">${rows.map((r) => html`<div class="bar-col" title="${r.day}: ${r.n}"><span class="mono">${r.n || ""}</span>
+    <i style="height:${Math.max(2, Math.round((r.n / max) * 100))}%;background:${color}"></i><em>${r.day.slice(8)}</em></div>`)}</div>`;
+};
+
 export function openAdmin() {
   screen("админка", "// только для своих", (b) => {
-    const names = { users: "игроков", online: "онлайн", dau: "за сутки", matches: "мэтчей", squads_open: "отрядов открыто", posts: "постов", premium: "premium" };
-    const load = async () => {
-      let s, feeds, guides, sched;
-      try {
-        [s, feeds, guides, sched] = await Promise.all([api("/api/admin/stats"), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled")]);
-      } catch (e) { return fail(e); }
-      mount(b, html`<div class="pad">
-        <div class="stats" style="grid-template-columns:1fr 1fr 1fr">${Object.entries(s).map(([k, v]) => html`<div class="stat"><b>${v}</b><span class="kicker">${names[k] || k}</span></div>`)}</div>
-        <div class="kicker" style="margin:24px 0 10px">создать</div>
-        <div class="tiles" style="padding:0">
-          <button class="tile" data-act="tour">${icon("swords")}<div><b>Турнир</b><div class="sub">для ${GI().short}</div></div></button>
-          <button class="tile" data-act="poll">${icon("poll")}<div><b>Опрос дня</b><div class="sub">вместо авто</div></div></button>
-          <button class="tile wide" data-act="post">${icon("feed")}<div class="grow"><b>Пост от Леры</b><div class="sub">сразу или по расписанию</div></div></button>
-        </div>
+    let tab = "overview";
+    const TABS = [["overview", "Обзор"], ["users", "Игроки"], ["reports", "Жалобы"], ["content", "Контент"], ["mail", "Рассылка"], ["promo", "Промо"], ["log", "Журнал"]];
+    mount(b, html`<div class="pad"><div class="chips scroll" id="at" style="margin-bottom:14px"></div></div><div id="ab"></div>`);
+    const body = b.querySelector("#ab");
+    const drawTabs = () => mount(b.querySelector("#at"), TABS.map(([k, v]) => html`<button class="chip ${tab === k ? "on" : ""}" data-act="atab" data-t="${k}">${v}</button>`));
+    let offInner = null;
+    function show() {
+      drawTabs();
+      if (offInner) offInner();
+      body.innerHTML = '<div class="spinner"></div>';
+      offInner = ({ overview: aOverview, users: aUsers, reports: aReports, content: aContent, mail: aMail, promo: aPromo, log: aLog })[tab](body) || null;
+    }
+    show();
+    const off = on(b, { atab: (x) => { tab = x.dataset.t; haptic.sel(); show(); } });
+    return () => { off(); offInner?.(); };
+  });
+}
 
-        <div class="kicker" style="margin:24px 0 6px">гайды на модерации · <b>${guides.guides.length}</b></div>
-        ${guides.guides.length ? html`<div class="list">${guides.guides.map((x) => html`<div class="li" style="align-items:flex-start">
-          <div class="grow" style="min-width:0"><b>${x.title}</b><div class="small muted">${GI(x.game).short} · ${x.author?.name}</div>
-            <details style="margin-top:6px"><summary class="small" style="color:var(--acc)">читать</summary><div class="guide-body small" style="margin-top:6px">${x.body}</div></details></div>
-          <button class="ibtn" data-act="mod" data-id="${x.id}" data-ok="1" style="color:var(--acc)">${icon("check")}</button>
-          <button class="ibtn" data-act="mod" data-id="${x.id}" data-ok="0" style="color:var(--hot)">${icon("x")}</button></div>`)}</div>`
-          : html`<p class="muted small">Пусто.</p>`}
+function aOverview(b) {
+  const names = { users: "игроков", online: "онлайн", dau: "сегодня", wau: "за 7 дней", new_today: "новых сегодня", premium: "premium",
+    stars_30d: "⭐ за 30 дн", nesso_total: "несо у игроков", matches: "мэтчей", clans: "кланов", reports: "жалоб", banned: "в бане" };
+  (async () => {
+    let o; try { o = await api("/api/admin/overview"); } catch (e) { return fail(e); }
+    mount(b, html`<div class="pad">
+      <div class="stats" style="grid-template-columns:repeat(3,1fr)">${Object.entries(o.cards).map(([k, v]) => html`<div class="stat"><b>${v}</b><span class="kicker">${names[k] || k}</span></div>`)}</div>
+      <div class="kicker" style="margin:22px 0 8px">активные игроки · 14 дней</div>${bars(o.dau)}
+      <div class="kicker" style="margin:22px 0 8px">регистрации · 14 дней</div>${bars(o.reg, "var(--sky)")}
+      <div class="kicker" style="margin:22px 0 8px">игры</div>
+      <div class="list">${o.games.map((g) => html`<div class="li"><span class="grow">${GI(g.game)?.name || g.game}</span><b class="mono">${g.n}</b></div>`)}</div>
+      <div class="kicker" style="margin:22px 0 8px">экономика · 7 дней</div>
+      <div class="list">${o.economy.map((e) => html`<div class="li"><span class="grow mono small">${e.r}</span><span class="small muted">${e.n}×</span>
+        <b class="mono" style="color:${e.s >= 0 ? "var(--acc)" : "var(--hot)"}">${e.s > 0 ? "+" : ""}${e.s}</b></div>`)}</div><div class="sp"></div></div>`);
+  })();
+}
 
-        <div class="kicker" style="margin:24px 0 6px">автопостинг (rss / atom)</div>
-        <p class="muted small" style="margin:0 0 10px">Новости игр сами появятся в ленте. Для Telegram-каналов используй RSS-мост, например <span class="mono">rsshub.app/telegram/channel/имя</span>.</p>
-        ${feeds.feeds.length ? html`<div class="list">${feeds.feeds.map((f) => html`<div class="li"><span class="grow" style="min-width:0">
-          <b class="ell" style="display:block">${f.title || f.url}</b><span class="small muted ell" style="display:block">${f.game ? GI(f.game).short : "все игры"} · ${f.last_error ? `ошибка: ${f.last_error}` : "ок"}</span></span>
-          <button class="ibtn" data-act="feed-del" data-id="${f.id}">${icon("trash")}</button></div>`)}</div>` : ""}
-        <button class="btn dark wide" style="margin-top:10px" data-act="feed-add">${icon("rss")}добавить источник</button>
+function aUsers(b) {
+  let q = "", filter = "", sort = "recent";
+  mount(b, html`<div class="pad"><input class="input" id="uq" placeholder="Ник, @username или ID" autocomplete="off">
+    <div class="chips scroll" id="uf" style="margin-top:10px"></div></div><div id="ul"></div>`);
+  const draw = () => mount(b.querySelector("#uf"), html`${[["", "Все"], ["reported", "С жалобами"], ["banned", "Бан"], ["premium", "Premium"]].map(([k, v]) => html`<button class="chip ${filter === k ? "on" : ""}" data-act="uf" data-v="${k}">${v}</button>`)}
+    <span style="width:8px;flex:none"></span>${[["recent", "Недавние"], ["new", "Новые"], ["xp", "По xp"], ["balance", "По несо"]].map(([k, v]) => html`<button class="chip ${sort === k ? "acc" : ""}" data-act="us" data-v="${k}">${v}</button>`)}`);
+  const load = async () => {
+    draw();
+    let r; try { r = await api(`/api/admin/users?q=${encodeURIComponent(q)}&filter=${filter}&sort=${sort}`); } catch (e) { return fail(e); }
+    mount(b.querySelector("#ul"), html`<div class="pad"><div class="list">${r.users.map((u) => html`<button class="li" style="width:100%;text-align:left" data-act="user" data-id="${u.tg_id}">
+      ${avatar(u, 40, { online: true })}<div class="grow" style="min-width:0"><b class="ell" style="display:block">${u.name}${u.username ? html` <span class="muted small">@${u.username}</span>` : ""}</b>
+      <span class="small muted mono">${u.tg_id} · ${u.balance} несо · ${u.xp} xp</span></div>
+      ${u.banned ? html`<span class="tag" style="background:var(--hot);color:#fff">бан</span>` : u.premium ? html`<span class="tag gold">prem</span>` : ""}</button>`)}</div>
+      ${!r.users.length ? html`<p class="muted">Никого</p>` : ""}</div>`);
+  };
+  let t;
+  b.querySelector("#uq").addEventListener("input", (e) => { q = e.target.value.trim(); clearTimeout(t); t = setTimeout(load, 300); });
+  load();
+  return on(b, {
+    uf: (x) => { filter = x.dataset.v; load(); },
+    us: (x) => { sort = x.dataset.v; load(); },
+    user: (x) => adminUser(+x.dataset.id, load),
+  });
+}
 
-        ${sched.posts.length ? html`<div class="kicker" style="margin:24px 0 6px">запланировано</div><div class="list">${sched.posts.map((p) => html`<div class="li">
-          <span class="grow small ell">${p.text}</span><span class="small mono muted">${new Date(p.publish_at.replace(" ", "T") + "Z").toLocaleString("ru", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>`)}</div>` : ""}
-        <div class="sp"></div></div>`);
-    };
-    load();
-    return on(b, {
-      tour: () => tourCreate(load),
-      poll: () => sheet((el, close) => {
-        mount(el, html`<h2 class="h2" style="margin-bottom:14px">опрос дня</h2>
-          <div class="field"><label>вопрос</label><input class="input" id="pq" maxlength="140"></div>
-          <div class="field"><label>варианты · по одному на строку</label><textarea class="input" id="po" placeholder="Да\nНет\nНе знаю"></textarea></div>
-          <button class="toggle" data-act="pg" style="width:100%;margin-bottom:14px"><span>Только для ${GI().short}</span><i class="sw" id="pgsw"></i></button>
-          <button class="btn wide" data-act="ok">опубликовать на сегодня</button>`);
-        let onlyGame = false;
-        on(el, {
-          pg: () => { onlyGame = !onlyGame; el.querySelector("#pgsw").classList.toggle("on", onlyGame); },
+export function adminUser(uid, onChange) {
+  pushScreen((el, pop) => {
+    let d = null;
+    const load = async () => { try { d = await api(`/api/admin/users/${uid}`); } catch (e) { fail(e); return pop(); } draw(); };
+    function draw() {
+      const u = d.user, c = d.card;
+      mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker grow mono">id ${u.tg_id}</span>
+          <button class="ibtn" data-act="profile">${icon("eye")}</button></div>
+        <div class="pad">
+          <div class="row" style="gap:14px">${avatar(c, 64)}<div class="grow" style="min-width:0"><h2 class="h2 ell">${c.name}</h2>
+            <div class="small muted">${u.username ? `@${u.username} · ` : ""}с ${u.created_at.slice(0, 10)} · был ${u.last_seen.slice(0, 16)}</div>
+            ${u.banned ? html`<div class="tag" style="background:var(--hot);color:#fff;margin-top:6px">бан${u.ban_reason ? `: ${u.ban_reason}` : ""}</div>` : ""}</div></div>
+          <div class="stats" style="grid-template-columns:repeat(3,1fr)">
+            <div class="stat"><b>${u.balance}</b><span class="kicker">несо</span></div><div class="stat"><b>${u.tickets}</b><span class="kicker">тикетов</span></div>
+            <div class="stat"><b>${u.xp}</b><span class="kicker">xp</span></div>
+            ${Object.entries({ posts: "постов", matches: "мэтчей", squads: "отрядов", messages: "сообщений", days_active: "дней в Лере" }).map(([k, v]) => html`<div class="stat"><b>${d.stats[k]}</b><span class="kicker">${v}</span></div>`)}
+            <div class="stat"><b>${u.premium_until && new Date(u.premium_until.replace(" ", "T") + "Z") > new Date() ? u.premium_until.slice(0, 10) : "—"}</b><span class="kicker">premium до</span></div></div>
+          <div class="kicker" style="margin:22px 0 10px">выдать</div>
+          <div class="chips">${[["nesso", "несо"], ["ticket", "тикеты"], ["premium", "premium (дни)"], ["xp", "xp"], ["item", "предмет"]].map(([k, v]) => html`<button class="chip" data-act="grant" data-k="${k}">${icon("plus")}${v}</button>`)}
+            <button class="chip" data-act="take">${icon("x")}списать несо</button></div>
+          <div class="kicker" style="margin:22px 0 10px">модерация</div>
+          <div class="chips">
+            ${u.banned ? html`<button class="chip acc" data-act="unban">разбанить</button>` : html`<button class="chip" style="color:var(--hot)" data-act="ban">${icon("flag")}забанить</button>`}
+            ${[["photos", "удалить фото"], ["about", "стереть «о себе»"], ["nick", "сбросить ник"], ["posts", "удалить посты"]].map(([k, v]) => html`<button class="chip" data-act="wipe" data-w="${k}">${v}</button>`)}</div>
+          ${d.reports.length ? html`<div class="kicker" style="margin:22px 0 6px">жалобы на игрока · ${d.reports.length}</div>
+            <div class="list">${d.reports.map((r) => html`<div class="li small"><span class="grow">${r.reason}</span><span class="muted mono">${r.created_at.slice(5, 16)}</span>${r.resolved ? html`<span class="tag">✓</span>` : ""}</div>`)}</div>` : ""}
+          ${d.payments.length ? html`<div class="kicker" style="margin:22px 0 6px">оплаты</div>
+            <div class="list">${d.payments.map((p) => html`<div class="li small"><span class="grow mono">${p.payload.split(":")[0]}</span><b>${p.stars} ⭐</b><span class="muted mono">${p.created_at.slice(0, 10)}</span></div>`)}</div>` : ""}
+          <div class="kicker" style="margin:22px 0 6px">последние операции</div>
+          <div class="list">${d.transactions.map((t) => html`<div class="li small"><span class="grow mono">${t.reason}</span>
+            <b class="mono" style="color:${t.amount >= 0 ? "var(--acc)" : "var(--hot)"}">${t.amount > 0 ? "+" : ""}${t.amount}</b><span class="muted mono">${t.created_at.slice(5, 16)}</span></div>`)}</div>
+          <div class="sp"></div></div>`);
+    }
+    async function grantSheet(kind, negative = false) {
+      let items = [];
+      if (kind === "item") { try { items = (await api("/api/admin/items")).items; } catch (e) { return fail(e); } }
+      sheet((sh, close) => {
+        let item = items[0]?.id;
+        const draw2 = () => mount(sh, html`<h2 class="h2" style="margin-bottom:14px">${negative ? "списать несо" : `выдать: ${kind}`}</h2>
+          ${kind === "item" ? html`<div class="chips" style="max-height:240px;overflow:auto">${items.map((i) => html`<button class="chip ${item === i.id ? "on" : ""}" data-act="it" data-v="${i.id}">${i.name}</button>`)}</div>`
+            : html`<div class="field"><label>${kind === "premium" ? "сколько дней" : "сколько"}</label><input class="input" id="gv" type="number" inputmode="numeric" value="${kind === "premium" ? 30 : 100}"></div>`}
+          <div class="field" style="margin-top:12px"><label>комментарий (увидит игрок)</label><input class="input" id="gn" maxlength="200" placeholder="${negative ? "Причина" : "За победу в конкурсе"}"></div>
+          <button class="toggle" data-act="nt" style="width:100%;margin-bottom:14px"><span>Уведомить в боте</span><i class="sw on" id="ntsw"></i></button>
+          <button class="btn wide ${negative ? "hot" : ""}" data-act="ok">${negative ? "списать" : "выдать"}</button>`);
+        let ntf = true;
+        draw2();
+        on(sh, {
+          it: (x) => { item = x.dataset.v; draw2(); },
+          nt: () => { ntf = !ntf; sh.querySelector("#ntsw").classList.toggle("on", ntf); },
           ok: async () => {
-            const options = el.querySelector("#po").value.split("\n").map((x) => x.trim()).filter(Boolean);
-            try { await api("/api/admin/poll", { method: "POST", body: { question: el.querySelector("#pq").value, options, game: onlyGame ? S.game : null } }); toast("Опрос запущен", "ok"); close(); }
-            catch (e) { fail(e); }
-          },
-        });
-      }),
-      post: () => sheet((el, close) => {
-        mount(el, html`<h2 class="h2" style="margin-bottom:14px">пост от Леры</h2>
-          <div class="field"><textarea class="input" id="pt" maxlength="1500" style="min-height:140px" placeholder="Текст новости"></textarea></div>
-          <div class="field"><label>ссылка (необязательно)</label><input class="input" id="pl" placeholder="https://"></div>
-          <div class="field"><label>когда опубликовать (мск) · пусто = сейчас</label><input class="input" id="pa" type="datetime-local"></div>
-          <button class="toggle" data-act="pg" style="width:100%;margin-bottom:14px"><span>Только в ленту ${GI().short}</span><i class="sw" id="pgsw"></i></button>
-          <button class="btn wide" data-act="ok">опубликовать</button>`);
-        let onlyGame = false;
-        on(el, {
-          pg: () => { onlyGame = !onlyGame; el.querySelector("#pgsw").classList.toggle("on", onlyGame); },
-          ok: async () => {
-            const body = { text: el.querySelector("#pt").value, link: el.querySelector("#pl").value.trim() || null,
-              publish_at: el.querySelector("#pa").value || null, game: onlyGame ? S.game : null };
-            try { await api("/api/admin/post", { method: "POST", body }); toast(body.publish_at ? "Запланировано" : "Опубликовано", "ok"); close(); load(); }
-            catch (e) { fail(e); }
-          },
-        });
-      }),
-      "feed-add": () => sheet((el, close) => {
-        mount(el, html`<h2 class="h2" style="margin-bottom:14px">новый источник</h2>
-          <div class="field"><label>rss / atom ссылка</label><input class="input" id="fu" placeholder="https://…"></div>
-          <div class="field"><label>название</label><input class="input" id="ft" maxlength="60" placeholder="Новости HoK"></div>
-          <div class="field"><span class="lbl">игра</span><div class="chips" id="fg">${[["", "Все игры"], ...Object.entries(S.dict.games).map(([k, g]) => [k, g.short])].map(([k, v]) => html`<button class="chip ${k === "" ? "on" : ""}" data-act="fg" data-v="${k}">${v}</button>`)}</div></div>
-          <button class="btn wide" data-act="ok">подключить</button>`);
-        let game = "";
-        on(el, {
-          fg: (x) => { game = x.dataset.v; el.querySelectorAll("#fg .chip").forEach((c) => c.classList.toggle("on", c === x)); },
-          ok: async () => {
+            const value = kind === "item" ? item : String((negative ? -1 : 1) * Math.abs(+sh.querySelector("#gv").value || 0));
             try {
-              const r = await api("/api/admin/feeds", { method: "POST", body: { url: el.querySelector("#fu").value.trim(), title: el.querySelector("#ft").value, game: game || null } });
-              toast(r.feed?.last_error ? `Добавлено, но ошибка: ${r.feed.last_error}` : "Подключено — свежая новость уже в ленте", r.feed?.last_error ? "err" : "ok");
-              close(); load();
+              const r = await api(`/api/admin/users/${uid}/grant`, { method: "POST", body: { kind, value, note: sh.querySelector("#gn").value, notify_user: negative ? false : ntf } });
+              haptic.ok(); toast(`Готово: ${r.got}`, "ok"); close(); load(); onChange?.();
             } catch (e) { fail(e); }
           },
         });
+      });
+    }
+    load();
+    return on(el, {
+      back: pop,
+      profile: () => openPerson(d.card),
+      grant: (x) => grantSheet(x.dataset.k),
+      take: () => grantSheet("nesso", true),
+      ban: () => sheet((sh, close) => {
+        mount(sh, html`<h2 class="h2" style="margin-bottom:14px">забанить ${d.card.name}?</h2>
+          <div class="field"><label>причина (увидит игрок)</label><input class="input" id="br" maxlength="200" placeholder="Спам / токсичность / мошенничество"></div>
+          <p class="muted small">Игрок потеряет доступ к Лере, анкета пропадёт из дуэта, жалобы закроются.</p>
+          <button class="btn hot wide" data-act="ok">забанить</button>`);
+        on(sh, { ok: async () => { try { await api(`/api/admin/users/${uid}/ban`, { method: "POST", body: { reason: sh.querySelector("#br").value } }); close(); toast("Забанен"); load(); onChange?.(); } catch (e) { fail(e); } } });
       }),
-      "feed-del": async (x) => { try { await api(`/api/admin/feeds/${x.dataset.id}`, { method: "DELETE" }); load(); } catch (e) { fail(e); } },
-      mod: async (x) => { try { await api(`/api/admin/guides/${x.dataset.id}`, { method: "POST", body: { approve: x.dataset.ok === "1" } }); toast(x.dataset.ok === "1" ? "Опубликовано" : "Отклонено"); load(); } catch (e) { fail(e); } },
+      unban: async () => { try { await api(`/api/admin/users/${uid}/unban`, { method: "POST" }); toast("Разбанен", "ok"); load(); onChange?.(); } catch (e) { fail(e); } },
+      wipe: async (x) => {
+        if (!(await confirmSheet("Точно?", "Это нельзя отменить.", "да", true))) return;
+        try { await api(`/api/admin/users/${uid}/wipe`, { method: "POST", body: { what: x.dataset.w } }); toast("Готово"); load(); } catch (e) { fail(e); }
+      },
     });
+  });
+}
+
+function aReports(b) {
+  const load = async () => {
+    let r; try { r = await api("/api/admin/reports"); } catch (e) { return fail(e); }
+    mount(b, r.reports.length ? html`<div class="pad"><div class="list">${r.reports.map((x) => html`<div class="li" style="align-items:flex-start">
+      ${avatar(x.user, 40)}<button class="grow" style="text-align:left;min-width:0" data-act="user" data-id="${x.to_id}"><b>${x.user?.name || x.to_id}</b>
+        <span class="tag" style="background:var(--hot);color:#fff;margin-left:6px">${x.n}</span>
+        <div class="small muted" style="margin-top:4px">${x.reasons}</div></button>
+      <div class="stack" style="flex:none"><button class="btn sm hot" data-act="ban" data-id="${x.to_id}">бан</button>
+        <button class="btn sm dark" data-act="ok" data-id="${x.to_id}">ок</button></div></div>`)}</div></div>`
+      : html`<div class="empty">${leraSays("Жалоб нет. Тишина и порядок.")}</div>`);
+  };
+  load();
+  return on(b, {
+    user: (x) => adminUser(+x.dataset.id, load),
+    ok: async (x) => { try { await api(`/api/admin/reports/${x.dataset.id}/dismiss`, { method: "POST" }); load(); } catch (e) { fail(e); } },
+    ban: async (x) => { try { await api(`/api/admin/users/${x.dataset.id}/ban`, { method: "POST", body: { reason: "жалобы игроков" } }); toast("Забанен"); load(); } catch (e) { fail(e); } },
+  });
+}
+
+function aMail(b) {
+  let game = "", days = 30;
+  const load = async () => {
+    let r; try { r = await api("/api/admin/broadcasts"); } catch (e) { return fail(e); }
+    const text = b.querySelector("#mt")?.value || "";
+    mount(b, html`<div class="pad">
+      <div class="field"><label>текст рассылки · можно &lt;b&gt;жирный&lt;/b&gt; и &lt;i&gt;курсив&lt;/i&gt;</label><textarea class="input" id="mt" maxlength="3500" style="min-height:140px">${text}</textarea></div>
+      <div class="field"><span class="lbl">кому</span><div class="chips">${[["", "Всем"], ...Object.entries(S.dict.games).map(([k, g]) => [k, g.short])].map(([k, v]) => html`<button class="chip ${game === k ? "on" : ""}" data-act="mg" data-v="${k}">${v}</button>`)}</div></div>
+      <div class="field"><span class="lbl">заходили за последние</span><div class="seg">${[7, 30, 90, 3650].map((n) => html`<button class="${days === n ? "on" : ""}" data-act="md" data-v="${n}">${n > 365 ? "всё время" : `${n} дн`}</button>`)}</div></div>
+      <div class="row"><button class="btn ghost" data-act="test">себе</button><button class="btn grow" data-act="send">${icon("send")}разослать</button></div>
+      <p class="muted small">≈20 сообщений в секунду. Кнопка «Открыть Леру» добавится сама.</p>
+      ${r.broadcasts.length ? html`<div class="kicker" style="margin:20px 0 6px">история</div><div class="list">${r.broadcasts.map((x) => html`<div class="li small" style="align-items:flex-start">
+        <span class="grow" style="min-width:0"><span class="ell" style="display:block">${x.text}</span><span class="muted mono">${x.created_at.slice(5, 16)}</span></span>
+        <span class="mono">${x.sent}/${x.total}${x.failed ? html` <span style="color:var(--hot)">−${x.failed}</span>` : ""}</span>
+        <span class="tag ${x.status === "done" ? "acc" : ""}">${x.status === "done" ? "готово" : "идёт"}</span></div>`)}</div>` : ""}
+      <div class="sp"></div></div>`);
+  };
+  load();
+  const send = async (test) => {
+    const text = b.querySelector("#mt").value.trim();
+    if (!text) return toast("Пустой текст", "err");
+    if (!test && !(await confirmSheet("Разослать?", game ? `Всем игрокам ${S.dict.games[game].short}, кто заходил за ${days} дн.` : `Всем, кто заходил за ${days} дн.`, "разослать"))) return;
+    try { const r = await api("/api/admin/broadcast", { method: "POST", body: { text, game: game || null, days, test } }); toast(`Отправляется: ${r.total}`, "ok"); setTimeout(load, 1500); }
+    catch (e) { fail(e); }
+  };
+  return on(b, {
+    mg: (x) => { game = x.dataset.v; load(); }, md: (x) => { days = +x.dataset.v; load(); },
+    test: () => send(true), send: () => send(false),
+  });
+}
+
+function aPromo(b) {
+  const KINDS = { nesso: "несо", ticket: "тикеты", premium: "premium (дни)", item: "предмет" };
+  const load = async () => {
+    let r; try { r = await api("/api/admin/promos"); } catch (e) { return fail(e); }
+    mount(b, html`<div class="pad"><button class="btn wide" data-act="new">${icon("plus")}новый промокод</button>
+      <div class="list" style="margin-top:12px">${r.promos.map((p) => html`<div class="li">
+        <div class="grow" style="min-width:0"><b class="mono">${p.code}</b><div class="small muted">${KINDS[p.kind]}: ${p.value} · ${p.uses}/${p.max_uses}${p.expires_at ? ` · до ${p.expires_at.slice(0, 10)}` : ""}</div></div>
+        <button class="ibtn" data-act="copy" data-v="${p.code}">${icon("share")}</button><button class="ibtn" data-act="del" data-v="${p.code}">${icon("trash")}</button></div>`)}</div>
+      ${!r.promos.length ? html`<p class="muted">Промокодов пока нет. Раздавай их в канале, на стримах и за конкурсы.</p>` : ""}</div>`);
+  };
+  load();
+  return on(b, {
+    copy: async (x) => { try { await navigator.clipboard.writeText(x.dataset.v); toast("Скопировано", "ok"); } catch { toast(x.dataset.v); } },
+    del: async (x) => { if (!(await confirmSheet(`Удалить ${x.dataset.v}?`, "", "удалить", true))) return; try { await api(`/api/admin/promos/${x.dataset.v}`, { method: "DELETE" }); load(); } catch (e) { fail(e); } },
+    new: async () => {
+      let items = [];
+      try { items = (await api("/api/admin/items")).items; } catch {}
+      sheet((sh, close) => {
+        const st = { kind: "nesso", item: items[0]?.id };
+        const draw = () => {
+          const keep = (id, d) => sh.querySelector(id)?.value ?? d;
+          const v = { code: keep("#pc", ""), val: keep("#pv", "100"), uses: keep("#pu", "100"), days: keep("#pd", "30") };
+          mount(sh, html`<h2 class="h2" style="margin-bottom:14px">промокод</h2>
+            <div class="field"><label>код · пусто = случайный</label><input class="input mono" id="pc" maxlength="32" value="${v.code}" style="text-transform:uppercase" placeholder="LERA2026"></div>
+            <div class="field"><span class="lbl">что даёт</span><div class="chips">${Object.entries(KINDS).map(([k, t]) => html`<button class="chip ${st.kind === k ? "on" : ""}" data-act="k" data-v="${k}">${t}</button>`)}</div></div>
+            ${st.kind === "item" ? html`<div class="chips" style="max-height:180px;overflow:auto;margin-bottom:14px">${items.map((i) => html`<button class="chip ${st.item === i.id ? "on" : ""}" data-act="it" data-v="${i.id}">${i.name}</button>`)}</div>`
+              : html`<div class="field"><label>${st.kind === "premium" ? "дней premium" : "сколько"}</label><input class="input" id="pv" type="number" inputmode="numeric" value="${v.val}"></div>`}
+            <div class="row" style="gap:10px"><div class="field grow"><label>активаций</label><input class="input" id="pu" type="number" inputmode="numeric" value="${v.uses}"></div>
+              <div class="field grow"><label>живёт, дней · 0 = вечно</label><input class="input" id="pd" type="number" inputmode="numeric" value="${v.days}"></div></div>
+            <button class="btn wide" data-act="ok">создать</button>`);
+        };
+        draw();
+        on(sh, {
+          k: (x) => { st.kind = x.dataset.v; draw(); }, it: (x) => { st.item = x.dataset.v; draw(); },
+          ok: async () => {
+            const body = { code: sh.querySelector("#pc").value, kind: st.kind, value: st.kind === "item" ? st.item : sh.querySelector("#pv").value,
+              max_uses: +sh.querySelector("#pu").value || 1, days: +sh.querySelector("#pd").value || 0 };
+            try { const r = await api("/api/admin/promos", { method: "POST", body }); toast(`Создан ${r.code}`, "ok"); close(); load(); } catch (e) { fail(e); }
+          },
+        });
+      });
+    },
+  });
+}
+
+function aLog(b) {
+  (async () => {
+    let r; try { r = await api("/api/admin/log"); } catch (e) { return fail(e); }
+    mount(b, html`<div class="pad"><div class="list">${r.log.map((x) => html`<div class="li small" style="align-items:flex-start">
+      <span class="mono muted" style="flex:none">${x.at.slice(5, 16)}</span><span class="grow"><b>${x.admin_name}</b> · ${x.action}${x.target_name ? ` → ${x.target_name}` : ""}
+      ${x.details ? html`<div class="muted">${x.details}</div>` : ""}</span></div>`)}</div>${!r.log.length ? html`<p class="muted">Пусто</p>` : ""}</div>`);
+  })();
+}
+
+function aContent(b) {
+  const names = { users: "игроков", online: "онлайн", dau: "за сутки", matches: "мэтчей", squads_open: "отрядов открыто", posts: "постов", premium: "premium" };
+  const load = async () => {
+    let s, feeds, guides, sched;
+    try {
+      [s, feeds, guides, sched] = await Promise.all([Promise.resolve(null), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled")]);
+    } catch (e) { return fail(e); }
+    mount(b, html`<div class="pad">
+      <div class="kicker" style="margin:0 0 10px">создать</div>
+      <div class="tiles" style="padding:0">
+        <button class="tile" data-act="tour">${icon("swords")}<div><b>Турнир</b><div class="sub">для ${GI().short}</div></div></button>
+        <button class="tile" data-act="poll">${icon("poll")}<div><b>Опрос дня</b><div class="sub">вместо авто</div></div></button>
+        <button class="tile wide" data-act="post">${icon("feed")}<div class="grow"><b>Пост от Леры</b><div class="sub">сразу или по расписанию</div></div></button>
+      </div>
+
+      <div class="kicker" style="margin:24px 0 6px">гайды на модерации · <b>${guides.guides.length}</b></div>
+      ${guides.guides.length ? html`<div class="list">${guides.guides.map((x) => html`<div class="li" style="align-items:flex-start">
+        <div class="grow" style="min-width:0"><b>${x.title}</b><div class="small muted">${GI(x.game).short} · ${x.author?.name}</div>
+          <details style="margin-top:6px"><summary class="small" style="color:var(--acc)">читать</summary><div class="guide-body small" style="margin-top:6px">${x.body}</div></details></div>
+        <button class="ibtn" data-act="mod" data-id="${x.id}" data-ok="1" style="color:var(--acc)">${icon("check")}</button>
+        <button class="ibtn" data-act="mod" data-id="${x.id}" data-ok="0" style="color:var(--hot)">${icon("x")}</button></div>`)}</div>`
+        : html`<p class="muted small">Пусто.</p>`}
+
+      <div class="kicker" style="margin:24px 0 6px">автопостинг (rss / atom)</div>
+      <p class="muted small" style="margin:0 0 10px">Новости игр сами появятся в ленте. Для Telegram-каналов используй RSS-мост, например <span class="mono">rsshub.app/telegram/channel/имя</span>.</p>
+      ${feeds.feeds.length ? html`<div class="list">${feeds.feeds.map((f) => html`<div class="li"><span class="grow" style="min-width:0">
+        <b class="ell" style="display:block">${f.title || f.url}</b><span class="small muted ell" style="display:block">${f.game ? GI(f.game).short : "все игры"} · ${f.last_error ? `ошибка: ${f.last_error}` : "ок"}</span></span>
+        <button class="ibtn" data-act="feed-del" data-id="${f.id}">${icon("trash")}</button></div>`)}</div>` : ""}
+      <button class="btn dark wide" style="margin-top:10px" data-act="feed-add">${icon("rss")}добавить источник</button>
+
+      ${sched.posts.length ? html`<div class="kicker" style="margin:24px 0 6px">запланировано</div><div class="list">${sched.posts.map((p) => html`<div class="li">
+        <span class="grow small ell">${p.text}</span><span class="small mono muted">${new Date(p.publish_at.replace(" ", "T") + "Z").toLocaleString("ru", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></div>`)}</div>` : ""}
+      <div class="sp"></div></div>`);
+  };
+  load();
+  return on(b, {
+    tour: () => tourCreate(load),
+    poll: () => sheet((el, close) => {
+      mount(el, html`<h2 class="h2" style="margin-bottom:14px">опрос дня</h2>
+        <div class="field"><label>вопрос</label><input class="input" id="pq" maxlength="140"></div>
+        <div class="field"><label>варианты · по одному на строку</label><textarea class="input" id="po" placeholder="Да\nНет\nНе знаю"></textarea></div>
+        <button class="toggle" data-act="pg" style="width:100%;margin-bottom:14px"><span>Только для ${GI().short}</span><i class="sw" id="pgsw"></i></button>
+        <button class="btn wide" data-act="ok">опубликовать на сегодня</button>`);
+      let onlyGame = false;
+      on(el, {
+        pg: () => { onlyGame = !onlyGame; el.querySelector("#pgsw").classList.toggle("on", onlyGame); },
+        ok: async () => {
+          const options = el.querySelector("#po").value.split("\n").map((x) => x.trim()).filter(Boolean);
+          try { await api("/api/admin/poll", { method: "POST", body: { question: el.querySelector("#pq").value, options, game: onlyGame ? S.game : null } }); toast("Опрос запущен", "ok"); close(); }
+          catch (e) { fail(e); }
+        },
+      });
+    }),
+    post: () => sheet((el, close) => {
+      mount(el, html`<h2 class="h2" style="margin-bottom:14px">пост от Леры</h2>
+        <div class="field"><textarea class="input" id="pt" maxlength="1500" style="min-height:140px" placeholder="Текст новости"></textarea></div>
+        <div class="field"><label>ссылка (необязательно)</label><input class="input" id="pl" placeholder="https://"></div>
+        <div class="field"><label>когда опубликовать (мск) · пусто = сейчас</label><input class="input" id="pa" type="datetime-local"></div>
+        <button class="toggle" data-act="pg" style="width:100%;margin-bottom:14px"><span>Только в ленту ${GI().short}</span><i class="sw" id="pgsw"></i></button>
+        <button class="btn wide" data-act="ok">опубликовать</button>`);
+      let onlyGame = false;
+      on(el, {
+        pg: () => { onlyGame = !onlyGame; el.querySelector("#pgsw").classList.toggle("on", onlyGame); },
+        ok: async () => {
+          const body = { text: el.querySelector("#pt").value, link: el.querySelector("#pl").value.trim() || null,
+            publish_at: el.querySelector("#pa").value || null, game: onlyGame ? S.game : null };
+          try { await api("/api/admin/post", { method: "POST", body }); toast(body.publish_at ? "Запланировано" : "Опубликовано", "ok"); close(); load(); }
+          catch (e) { fail(e); }
+        },
+      });
+    }),
+    "feed-add": () => sheet((el, close) => {
+      mount(el, html`<h2 class="h2" style="margin-bottom:14px">новый источник</h2>
+        <div class="field"><label>rss / atom ссылка</label><input class="input" id="fu" placeholder="https://…"></div>
+        <div class="field"><label>название</label><input class="input" id="ft" maxlength="60" placeholder="Новости HoK"></div>
+        <div class="field"><span class="lbl">игра</span><div class="chips" id="fg">${[["", "Все игры"], ...Object.entries(S.dict.games).map(([k, g]) => [k, g.short])].map(([k, v]) => html`<button class="chip ${k === "" ? "on" : ""}" data-act="fg" data-v="${k}">${v}</button>`)}</div></div>
+        <button class="btn wide" data-act="ok">подключить</button>`);
+      let game = "";
+      on(el, {
+        fg: (x) => { game = x.dataset.v; el.querySelectorAll("#fg .chip").forEach((c) => c.classList.toggle("on", c === x)); },
+        ok: async () => {
+          try {
+            const r = await api("/api/admin/feeds", { method: "POST", body: { url: el.querySelector("#fu").value.trim(), title: el.querySelector("#ft").value, game: game || null } });
+            toast(r.feed?.last_error ? `Добавлено, но ошибка: ${r.feed.last_error}` : "Подключено — свежая новость уже в ленте", r.feed?.last_error ? "err" : "ok");
+            close(); load();
+          } catch (e) { fail(e); }
+        },
+      });
+    }),
+    "feed-del": async (x) => { try { await api(`/api/admin/feeds/${x.dataset.id}`, { method: "DELETE" }); load(); } catch (e) { fail(e); } },
+    mod: async (x) => { try { await api(`/api/admin/guides/${x.dataset.id}`, { method: "POST", body: { approve: x.dataset.ok === "1" } }); toast(x.dataset.ok === "1" ? "Опубликовано" : "Отклонено"); load(); } catch (e) { fail(e); } },
   });
 }

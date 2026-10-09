@@ -18,7 +18,10 @@ export function render(root) {
   const box = root.querySelector("#hb");
 
   async function load() {
-    try { data = await api(`/api/home?game=${S.game}`); } catch (e) { return fail(e); }
+    try {
+      [data] = await Promise.all([api(`/api/home?game=${S.game}`)]);
+      data.pass = await api("/api/pass").catch(() => null);
+    } catch (e) { return fail(e); }
     draw();
   }
 
@@ -54,7 +57,8 @@ export function render(root) {
           <div><b>Лерадл</b><div class="sub">${L.solved ? `разгадан ✓ · стрик ${L.streak}` : L.over ? "не вышло, завтра новый" : L.tries ? `попыток: ${L.tries}/6` : "угадай героя дня"}</div></div></button>
         <button class="tile" data-act="quests">${icon("target")}<div><b>Квесты</b><div class="sub">${data.quests_ready ? `${data.quests_ready} готово забрать` : "награды за активность"}</div></div>
           ${data.quests_ready ? html`<i class="badge">${data.quests_ready}</i>` : ""}</button>
-        <button class="tile" data-act="ach">${icon("medal")}<div><b>Ачивки</b><div class="sub">собери все</div></div></button>
+        <button class="tile" data-act="pass">${icon("crown")}<div><b>Боевой пропуск</b><div class="sub">${data.pass ? `ур. ${data.pass.level}/${data.pass.max}${data.pass.ready ? ` · ${data.pass.ready} наград` : ""}` : "сезон месяца"}</div></div>
+          ${data.pass?.ready ? html`<i class="badge">${data.pass.ready}</i>` : ""}</button>
       </div>`;
   }
 
@@ -108,6 +112,7 @@ export function render(root) {
     leradle: async () => (await lazy("openLeradle"))(load),
     quests: async () => (await lazy("openQuests"))(),
     ach: async () => (await lazy("openAchievements"))(),
+    pass: async () => (await lazy("openPass"))(load),
     vote: async (b) => {
       try { data.poll = await api(`/api/poll/${data.poll.id}/vote`, { method: "POST", body: { option: +b.dataset.i } }); haptic.sel(); draw(); } catch (e) { fail(e); }
     },

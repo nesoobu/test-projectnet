@@ -3,11 +3,12 @@ import { S, html, mount, on, haptic } from "../core.js";
 import { gameSwitch } from "../games.js";
 import * as duet from "./duet.js";
 import * as squads from "./squads.js";
+import * as clans from "./clans.js";
 
 let lastTab = "duet";
 
 export function render(root, arg) {
-  let tab = arg === "squads" ? "squads" : arg === "likes" || arg === "duet" ? "duet" : lastTab;
+  let tab = arg === "squads" || arg === "clans" ? arg : arg === "likes" || arg === "duet" ? "duet" : lastTab;
   let sub = null;
   root.classList.add("noscroll");
   root.innerHTML = `<div class="top mates-top" id="mt"></div><div id="mb" class="mates-body"></div>`;
@@ -15,15 +16,16 @@ export function render(root, arg) {
 
   const drawTop = () => mount(top, html`<div class="words">
       <button class="${tab === "duet" ? "on" : ""}" data-act="mt" data-t="duet">дуэт</button>
-      <button class="${tab === "squads" ? "on" : ""}" data-act="mt" data-t="squads">отряды</button></div>
-    ${gameSwitch()}`);
+      <button class="${tab === "squads" ? "on" : ""}" data-act="mt" data-t="squads">отряды</button>
+      <button class="${tab === "clans" ? "on" : ""}" data-act="mt" data-t="clans">кланы</button></div>
+    ${gameSwitch()}`) && top.querySelector(".words .on")?.scrollIntoView({ inline: "nearest", block: "nearest" });
 
   function open(a) {
     if (typeof sub === "function") sub();
     lastTab = tab;
     body.innerHTML = "";
     body.className = "mates-body " + (tab === "duet" ? "flexcol" : "scroll");
-    sub = (tab === "duet" ? duet : squads).render(body, a) || null;
+    sub = ({ duet, squads, clans }[tab]).render(body, a) || null;
     drawTop();
   }
 

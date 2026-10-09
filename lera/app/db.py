@@ -198,6 +198,52 @@ CREATE TABLE IF NOT EXISTS feeds (
     id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL UNIQUE, game TEXT, title TEXT,
     seen TEXT NOT NULL DEFAULT '[]', active INTEGER NOT NULL DEFAULT 1, last_error TEXT
 );
+CREATE TABLE IF NOT EXISTS clans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, tag TEXT NOT NULL UNIQUE, game TEXT, about TEXT,
+    color TEXT NOT NULL DEFAULT '#d4ff3f', owner INTEGER NOT NULL, open INTEGER NOT NULL DEFAULT 1,
+    xp INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS clan_members (
+    clan_id INTEGER NOT NULL, tg_id INTEGER PRIMARY KEY, role TEXT NOT NULL DEFAULT 'member',
+    xp INTEGER NOT NULL DEFAULT 0, joined_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS cm_clan ON clan_members(clan_id);
+CREATE TABLE IF NOT EXISTS clan_requests (
+    clan_id INTEGER NOT NULL, tg_id INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (clan_id, tg_id)
+);
+CREATE TABLE IF NOT EXISTS clan_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, clan_id INTEGER NOT NULL, sender INTEGER NOT NULL, text TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS clm_clan ON clan_messages(clan_id, id);
+CREATE TABLE IF NOT EXISTS clan_xp_log (clan_id INTEGER NOT NULL, amount INTEGER NOT NULL, at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE INDEX IF NOT EXISTS cxl ON clan_xp_log(at, clan_id);
+
+CREATE TABLE IF NOT EXISTS bp_progress (tg_id INTEGER NOT NULL, season TEXT NOT NULL, xp INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (tg_id, season));
+CREATE TABLE IF NOT EXISTS bp_claims (tg_id INTEGER NOT NULL, season TEXT NOT NULL, level INTEGER NOT NULL, track TEXT NOT NULL,
+    PRIMARY KEY (tg_id, season, level, track));
+CREATE TABLE IF NOT EXISTS bp_pass (tg_id INTEGER NOT NULL, season TEXT NOT NULL, PRIMARY KEY (tg_id, season));
+
+CREATE TABLE IF NOT EXISTS daily_active (day TEXT NOT NULL, tg_id INTEGER NOT NULL, PRIMARY KEY (day, tg_id));
+
+CREATE TABLE IF NOT EXISTS promos (
+    code TEXT PRIMARY KEY, kind TEXT NOT NULL, value TEXT NOT NULL, max_uses INTEGER NOT NULL DEFAULT 1,
+    uses INTEGER NOT NULL DEFAULT 0, expires_at TEXT, created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS promo_uses (code TEXT NOT NULL, tg_id INTEGER NOT NULL, at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (code, tg_id));
+
+CREATE TABLE IF NOT EXISTS broadcasts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, filter TEXT, total INTEGER NOT NULL DEFAULT 0,
+    sent INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'running',
+    created_by INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS admin_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, admin INTEGER NOT NULL, action TEXT NOT NULL, target INTEGER, details TEXT,
+    at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # Колонки, добавленные после первого релиза: (таблица, колонка, определение)
@@ -210,6 +256,9 @@ COLUMNS = [
     ("users", "leradle_streak", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "last_leradle", "TEXT"),
     ("users", "mute_ready", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "banned", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "ban_reason", "TEXT"),
+    ("blocks", "resolved", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

@@ -44,6 +44,7 @@ export async function openPerson(pOrId, { onLike, onPass } = {}) {
         <div class="shade"></div>
         <div class="info">
           <div class="row wrap" style="gap:6px;margin-bottom:10px">
+            ${p.clan ? html`<span class="tag clan-tag" style="--cc:${p.clan.color}" data-act="clan" data-id="${p.clan.id}">[${p.clan.tag}]</span>` : ""}
             ${p.online ? html`<span class="tag on-dot">онлайн</span>` : ""}
             ${p.premium ? html`<span class="tag gold">premium</span>` : ""}
             ${p.title ? html`<span class="tag">${p.title}</span>` : ""}
@@ -75,6 +76,7 @@ export async function openPerson(pOrId, { onLike, onPass } = {}) {
       pass: () => { close(); onPass?.(p); },
       report: () => { close(); reportSheet(p); },
       review: () => { close(); reviewSheet(p); },
+      clan: async (b, ev) => { ev.stopPropagation?.(); close(); const { openClan } = await import("./clans.js"); openClan(+b.dataset.id); },
       "copy-uid": async (b) => { try { await navigator.clipboard.writeText(b.dataset.v); toast("ID скопирован", "ok"); } catch { toast(b.dataset.v); } },
     });
   });

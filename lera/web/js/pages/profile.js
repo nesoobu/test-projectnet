@@ -68,6 +68,9 @@ export function render(root) {
         <button class="tile wide acc" data-act="edit">${icon("edit")}<div class="grow"><b>Анкета дуэта</b><div class="sub">${m.duet_visible ? "видна в поиске" : "скрыта из поиска"} · фото ${m.photos.length}/4</div></div>${icon("send")}</button>
         <button class="tile" data-act="quests">${icon("target")}<div><b>Квесты</b><div class="sub">награды каждый день</div></div><i class="badge" id="qb" style="display:none"></i></button>
         <button class="tile" data-act="ach">${icon("medal")}<div><b>Ачивки</b><div class="sub">награды за достижения</div></div></button>
+        <button class="tile wide" data-act="pass">${icon("crown")}<div class="grow"><b>Боевой пропуск</b><div class="sub">30 уровней наград за сезон</div></div>${icon("send")}</button>
+        <button class="tile" data-act="clan">${icon("squad")}<div><b>${m.clan ? `Клан [${m.clan.tag}]` : "Кланы"}</b><div class="sub">${m.clan ? "мой клан" : "вступи или создай"}</div></div></button>
+        <button class="tile" data-act="promo">${icon("gift")}<div><b>Промокод</b><div class="sub">ввести код</div></div></button>
         <button class="tile" data-act="gacha">${icon("sparkle")}<div><b>Гача</b><div class="sub">гарант через ${Math.max(0, 50 - m.pity)}</div></div></button>
         <button class="tile" data-act="shop">${icon("bag")}<div><b>Магазин</b><div class="sub">рамки, ники, титулы</div></div></button>
         <button class="tile" data-act="inv">${icon("box")}<div><b>Инвентарь</b><div class="sub">надеть и снять</div></div></button>
@@ -91,6 +94,20 @@ export function render(root) {
     games: () => openGamePicker(),
     game: (b) => editGame(b.dataset.g),
     ach: () => more.openAchievements(),
+    pass: () => more.openPass(),
+    clan: async () => {
+      if (S.me.clan) { const { openClan } = await import("./clans.js"); return openClan(S.me.clan.id); }
+      const { go } = await import("../app.js"); go("mates", "clans");
+    },
+    promo: () => sheet((el, close) => {
+      mount(el, html`<h2 class="h2" style="margin-bottom:14px">промокод</h2><input class="input" id="pc" maxlength="32" placeholder="LERA2026" style="text-transform:uppercase">
+        <button class="btn wide" style="margin-top:14px" data-act="ok">активировать</button>`);
+      setTimeout(() => el.querySelector("#pc")?.focus(), 300);
+      on(el, { ok: async () => {
+        try { const r = await api("/api/promo", { method: "POST", body: { code: el.querySelector("#pc").value } }); haptic.ok(); close(); toast(`Получено: ${r.got}`, "ok"); refreshMe(); }
+        catch (e) { fail(e); }
+      } });
+    }),
     mute: async () => {
       try { await api("/api/settings", { method: "POST", body: { mute_ready: !S.me.mute_ready } }); await refreshMe(); haptic.sel(); } catch (e) { fail(e); }
     },

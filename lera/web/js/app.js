@@ -76,6 +76,8 @@ async function boot() {
   else if (/^s\d+$/.test(sp)) { go("mates", "squads"); const { openSquad } = await import("./pages/squads.js"); openSquad(+sp.slice(1)); }
   else if (/^p\d+$/.test(sp)) { go("feed"); feed.openComments(+sp.slice(1)); }
   else if (/^t\d+$/.test(sp)) { go("home"); const { openTournament } = await import("./pages/more.js"); openTournament(+sp.slice(1)); }
+  else if (/^c\d+$/.test(sp)) { go("mates", "clans"); const { openClan } = await import("./pages/clans.js"); openClan(+sp.slice(1)); }
+  else if (sp === "pass") { go("home"); const { openPass } = await import("./pages/more.js"); openPass(); }
   else if (sp === "likes") go("mates", "likes");
   else if (sp === "duet") go("mates");
   else if (sp === "home") go("home");

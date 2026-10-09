@@ -102,8 +102,22 @@ async def spend(tg_id: int, amount: int, reason: str):
     await db.run("INSERT INTO transactions (tg_id, amount, reason) VALUES (?,?,?)", tg_id, -amount, reason)
 
 
+def season() -> str:
+    return datetime.now(MSK).strftime("%Y-%m")
+
+
 async def add_xp(tg_id: int, amount: int):
+    """Опыт игрока → боевой пропуск сезона → клан."""
     await db.run("UPDATE users SET xp = xp + ? WHERE tg_id=?", amount, tg_id)
+    if amount <= 0 or not tg_id:
+        return
+    await db.run("INSERT INTO bp_progress (tg_id, season, xp) VALUES (?,?,?) "
+                 "ON CONFLICT(tg_id, season) DO UPDATE SET xp = xp + excluded.xp", tg_id, season(), amount)
+    clan = await db.val("SELECT clan_id FROM clan_members WHERE tg_id=?", tg_id)
+    if clan:
+        await db.run("UPDATE clans SET xp = xp + ? WHERE id=?", amount, clan)
+        await db.run("UPDATE clan_members SET xp = xp + ? WHERE tg_id=?", amount, tg_id)
+        await db.run("INSERT INTO clan_xp_log (clan_id, amount) VALUES (?,?)", clan, amount)
 
 
 async def bump_quest(tg_id: int, quest_id: str, n: int = 1):
@@ -201,6 +215,10 @@ async def people(ids, game: str | None = None) -> dict[int, dict]:
                          f"WHERE u.tg_id IN ({q})", *ids)
     cos, games, reps = await cosmetics(ids), await user_games(ids), await reputation(ids)
     out = {r["tg_id"]: card(r, cos.get(r["tg_id"]), games.get(r["tg_id"]), reps.get(r["tg_id"]), game) for r in rows}
+    for r in await db.all_(f"SELECT m.tg_id, c.id, c.tag, c.color FROM clan_members m JOIN clans c ON c.id=m.clan_id "
+                           f"WHERE m.tg_id IN ({q})", *ids):
+        if r["tg_id"] in out:
+            out[r["tg_id"]]["clan"] = {"id": r["id"], "tag": r["tag"], "color": r["color"]}
     if 0 in out:
         out[0].update(name="Лера", avatar="/static/img/lera.svg", lera=True)
     return out
@@ -240,11 +258,15 @@ async def current_user(request: Request) -> dict:
     u = await db.one("SELECT * FROM users WHERE tg_id=?", uid)
     if not u:
         u = await ensure_user(tg, tg.get("start_param"))
+        await db.run("INSERT OR IGNORE INTO daily_active (day, tg_id) VALUES (?,?)", today(), uid)
     elif (utcnow() - (parse_ts(u["last_seen"]) or utcnow())).total_seconds() > 60:
+        await db.run("INSERT OR IGNORE INTO daily_active (day, tg_id) VALUES (?,?)", today(), uid)
         await db.run("UPDATE users SET last_seen=datetime('now'), username=?, first_name=?, "
                      "photo_url=COALESCE(?, photo_url) WHERE tg_id=?",
                      tg.get("username"), tg.get("first_name"), tg.get("photo_url"), uid)
     u["is_admin"] = uid in config.ADMIN_IDS
+    if u.get("banned") and not u["is_admin"]:
+        raise HTTPException(403, "Аккаунт заблокирован" + (f": {u['ban_reason']}" if u.get("ban_reason") else ""))
     return u
 
 
@@ -293,7 +315,7 @@ async def bootstrap(me=Me):
             "games": {k: {"name": g["name"], "short": g["short"], "color": g["color"], "ranks": g["ranks"],
                           "roles": g["roles"], "modes": g["modes"], "heroes": bool(g.get("heroes"))}
                       for k, g in C.GAMES.items()},
-            "review_tags": C.REVIEW_TAGS, "weekend": is_weekend(),
+            "review_tags": C.REVIEW_TAGS, "weekend": is_weekend(), "clan_cost": C.CLAN_COST,
         },
     }
 
@@ -413,7 +435,7 @@ async def duet_feed(game: str = C.DEFAULT_GAME, gender: str = "", age_min: int =
         game = C.DEFAULT_GAME
     rows = await db.all_(
         f"SELECT {UCOLS}, {PCOLS} FROM profiles p JOIN users u ON u.tg_id=p.tg_id "
-        "WHERE p.duet_visible=1 AND p.tg_id != ? AND p.tg_id != 0 AND p.nickname IS NOT NULL "
+        "WHERE p.duet_visible=1 AND p.tg_id != ? AND p.tg_id != 0 AND p.nickname IS NOT NULL AND u.banned=0 "
         "AND EXISTS (SELECT 1 FROM user_games ug WHERE ug.tg_id=p.tg_id AND ug.game=?) "
         "AND NOT EXISTS (SELECT 1 FROM swipes s WHERE s.from_id=? AND s.to_id=p.tg_id) "
         "AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.from_id=? AND b.to_id=p.tg_id) OR (b.from_id=p.tg_id AND b.to_id=?)) "
@@ -897,7 +919,7 @@ async def leaderboard(by: str = "xp", me=Me):
         rows = await db.all_("SELECT tg_id, streak AS score FROM users WHERE streak > 0 AND last_checkin >= ? "
                              "ORDER BY streak DESC, xp DESC LIMIT 50", yday())
     else:
-        rows = await db.all_("SELECT tg_id, xp AS score FROM users WHERE xp > 0 ORDER BY xp DESC LIMIT 50")
+        rows = await db.all_("SELECT tg_id, xp AS score FROM users WHERE xp > 0 AND banned=0 AND tg_id != 0 ORDER BY xp DESC LIMIT 50")
     ppl = await people([r["tg_id"] for r in rows])
     return {"top": [{**ppl[r["tg_id"]], "score": r["score"]} for r in rows if r["tg_id"] in ppl], "me": me["tg_id"]}
 
@@ -1037,7 +1059,7 @@ async def gacha(body: RollIn, me=Me):
         await spend(uid, C.GACHA_COST_X10 if n == 10 else C.GACHA_COST, f"gacha_x{n}")
     pity = await db.val("SELECT pity FROM users WHERE tg_id=?", uid)
     owned, _ = await inv_sets(uid)
-    pool = {r: [i for i, v in C.ITEMS.items() if v[2] == r and i not in C.PREMIUM_ONLY] for r in C.RARITY_WEIGHTS}
+    pool = {r: [i for i, v in C.ITEMS.items() if v[2] == r and i not in C.PREMIUM_ONLY and i not in C.BP_ONLY] for r in C.RARITY_WEIGHTS}
     results, refund = [], 0
     for k in range(n):
         rarity = roll_rarity(pity)
@@ -1078,7 +1100,8 @@ async def gacha_info(me=Me):
 # ── premium / payments ───────────────────────────────────────────────────
 
 PACKS = {"premium30": ("Lera Premium · 30 дней", "Суперлайки ×5, отмена свайпа, ×2 ежедневка, корона-рамка", None),
-         "nesso1000": ("1000 несо", "Пополнение кошелька Леры", 49)}
+         "nesso1000": ("1000 несо", "Пополнение кошелька Леры", 49),
+         "pass": ("Боевой пропуск сезона", "Премиум-линейка наград до конца месяца", C.BP_STARS)}
 
 
 class InvoiceIn(BaseModel):
@@ -1110,6 +1133,8 @@ async def apply_payment(charge_id: str, tg_id: int, payload: str, stars: int) ->
         await db.run("UPDATE users SET premium_until=? WHERE tg_id=?", sqlts(base + timedelta(days=30)), tg_id)
     elif pack == "nesso1000":
         await add_balance(tg_id, 1000, "stars")
+    elif pack == "pass":
+        await db.run("INSERT OR IGNORE INTO bp_pass (tg_id, season) VALUES (?,?)", tg_id, season())
     return True
 
 
@@ -1135,6 +1160,10 @@ async def admin_stats(me=Me):
 from . import v2  # noqa: E402
 
 app.include_router(v2.router)
+
+from . import v3  # noqa: E402
+
+app.include_router(v3.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────

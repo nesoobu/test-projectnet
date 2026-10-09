@@ -11,7 +11,7 @@ export function render(root) {
     try { data = await api("/api/chats"); } catch (e) { return fail(e); }
     const fresh = data.matches.filter((m) => !m.last_text);
     const convo = data.matches.filter((m) => m.last_text);
-    if (!data.matches.length && !data.squads.length) {
+    if (!data.matches.length && !data.squads.length && !S.me.clan) {
       return mount(list, html`<div class="empty"><h2 class="h2">тишина<span class="dot">.</span></h2>
         ${leraSays("Здесь появятся чаты, когда случится мэтч в дуэте или ты вступишь в отряд.")}
         <button class="btn" data-act="duet">${icon("duet")}к анкетам</button></div>`);
@@ -26,6 +26,10 @@ export function render(root) {
             <div class="row" style="margin-top:4px"><span class="grow ell ${m.unread ? "" : "muted"}" style="${m.unread ? "font-weight:600" : ""}">${m.mine ? "ты: " : ""}${m.last_text}</span>
             ${m.unread ? html`<i class="badge">${m.unread}</i>` : ""}</div></div>
         </button>`)}</div></div>` : ""}
+      ${S.me.clan ? html`<div class="pad"><div class="kicker" style="margin:20px 0 4px">клан</div>
+        <button class="li" style="width:100%;text-align:left" data-act="clan">
+          <div class="emblem" style="--cc:${S.me.clan.color};--s:52px"><span>${S.me.clan.tag}</span></div>
+          <div class="grow"><b>Чат клана [${S.me.clan.tag}]</b><div class="muted small" style="margin-top:4px">общий чат бойцов</div></div>${icon("send", 'width="18" height="18"')}</button></div>` : ""}
       ${data.squads.length ? html`<div class="pad"><div class="kicker" style="margin:20px 0 4px">мои отряды</div><div class="list">${data.squads.map((s) => html`
         <button class="li" style="width:100%;text-align:left" data-act="squad" data-id="${s.id}">
           <div class="av" style="--s:52px"><div class="in" style="background:var(--acc);color:var(--acc-ink)">${icon("squad", 'width="24" height="24"')}</div></div>
@@ -37,6 +41,7 @@ export function render(root) {
 
   const off = on(root, {
     match: (b) => openMatch(+b.dataset.id, load),
+    clan: async () => { const { openClan } = await import("./clans.js"); openClan(S.me.clan.id, load); },
     squad: async (b) => { const { openSquad } = await import("./squads.js"); openSquad(+b.dataset.id, load); },
     duet: async () => { const { go } = await import("../app.js"); go("duet"); },
   });
