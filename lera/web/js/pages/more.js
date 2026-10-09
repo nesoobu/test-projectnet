@@ -221,21 +221,8 @@ export function heroPicker(game, selected, done) {
   });
 }
 
-// ─── турниры ───
-export function openTournaments() {
-  const g = GI();
-  screen("турниры", `// ${g.name}`, (b) => {
-    const load = async () => {
-      let r; try { r = await api(`/api/tournaments?game=${S.game}`); } catch (e) { return fail(e); }
-      const { tourCard } = await import("./home.js");
-      mount(b, html`${S.me.is_admin ? html`<div class="pad" style="margin-bottom:12px"><button class="btn wide dark" data-act="create">${icon("plus")}создать турнир</button></div>` : ""}
-        ${r.tournaments.length ? html`<div class="pad stack">${r.tournaments.map(tourCard)}</div>`
-          : html`<div class="empty">${leraSays(`Турниров по ${g.short} пока нет. Как только админ откроет регистрацию — я напишу в ленту.`)}</div>`}<div class="sp"></div>`);
-    };
-    load();
-    return on(b, { tour: (x) => openTournament(+x.dataset.id, load), create: () => tourCreate(load) });
-  });
-}
+// ─── турниры (хаб и про-сцена — pro.js) ───
+export { openTournaments, openPro } from "./pro.js";
 
 export function openTournament(id, onChange) {
   pushScreen((el, pop) => {
@@ -464,7 +451,7 @@ export function openTourChat(id, title) {
   }, { flex: true });
 }
 
-function tourCreate(done) {
+export function tourCreate(done) {
   const g = GI();
   const st = { team_size: 1, max_teams: 8, best_of: 1, split: "70/30", checkin: true, auto_start: true };
   sheet((el, close) => {

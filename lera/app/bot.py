@@ -23,7 +23,7 @@ def open_kb(text: str = "Открыть Леру", start: str | None = None) -> 
 async def start(m: Message, command: CommandObject):
     u = m.from_user
     # t.me/<bot>?start=s12 — приглашение в отряд, ref_<id> — рефералка
-    deep = command.args if command.args and re.fullmatch(r"[smptc]\d+|likes|duet|home|pass", command.args) else None
+    deep = command.args if command.args and re.fullmatch(r"[smptcx]\d+|likes|duet|home|pass|pro", command.args) else None
     await ensure_user({"id": u.id, "username": u.username, "first_name": u.first_name,
                        "language_code": u.language_code}, command.args)
     await m.answer(

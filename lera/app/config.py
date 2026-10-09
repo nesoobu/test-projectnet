@@ -18,3 +18,6 @@ PREMIUM_STARS = int(os.getenv("PREMIUM_STARS", "99"))
 DEV_USER_ID = int(os.getenv("DEV_USER_ID") or 0)
 BOT_USERNAME = os.getenv("BOT_USERNAME", "lerarubot").lstrip("@")
 WEB_DIR = ROOT / "web"
+# Про-сцена: PandaScore (структурные данные, лого, live-счёт) — бесплатный токен на pandascore.co; Liquipedia — без ключа
+PANDASCORE_TOKEN = os.getenv("PANDASCORE_TOKEN", "")
+LIQUIPEDIA = os.getenv("LIQUIPEDIA", "1") not in ("0", "", "false", "no")

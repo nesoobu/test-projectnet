@@ -106,6 +106,8 @@ export async function route(link) {
   else if (/^s\d+$/.test(link)) { go("mates", "squads"); (await import("./pages/squads.js")).openSquad(n); }
   else if (/^p\d+$/.test(link)) { go("feed"); feed.openComments(n); }
   else if (/^t\d+$/.test(link)) { go("home"); (await import("./pages/more.js")).openTournament(n); }
+  else if (/^x\d+$/.test(link)) { go("home"); (await import("./pages/pro.js")).openPro(n); }
+  else if (link === "pro") { go("home"); (await import("./pages/pro.js")).openTournaments(); }
   else if (/^c\d+$/.test(link)) { go("mates", "clans"); (await import("./pages/clans.js")).openClan(n); }
   else if (link === "pass") { go("home"); (await import("./pages/more.js")).openPass(); }
   else if (link === "friends") { go("chats"); (await import("./pages/friends.js")).openFriends(); }

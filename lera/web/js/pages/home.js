@@ -2,6 +2,7 @@
 import { S, api, html, mount, on, icon, avatar, nameEl, sheet, toast, fail, haptic, leraSays, rankName, roleName, GI, myGame, left, plural, refreshMe, onState } from "../core.js";
 import { gameSwitch, editGame } from "../games.js";
 import { openPerson } from "./person.js";
+import { pmCard, openPro } from "./pro.js";
 
 const greet = () => {
   const h = new Date().getHours();
@@ -23,6 +24,9 @@ export function render(root) {
       [data] = await Promise.all([api(`/api/home?game=${S.game}`)]);
       data.pass = await api("/api/pass").catch(() => null);
       data.mm = await api(`/api/mm?game=${S.game}`).catch(() => null);
+      const live = await api(`/api/pro?tab=live&game=${S.game}`).catch(() => null);
+      data.pro = live?.matches?.length ? { live: true, ms: live.matches.slice(0, 3) }
+        : { live: false, ms: ((await api(`/api/pro?tab=soon&game=${S.game}`).catch(() => null))?.matches || []).slice(0, 2) };
     } catch (e) { return fail(e); }
     draw();
   }
@@ -91,9 +95,16 @@ export function render(root) {
         })}</div></div>`;
   }
 
+  function proBlock() {
+    if (!data.pro?.ms.length) return "";
+    return html`<div class="pad row" style="margin:24px 0 10px"><span class="kicker grow">${data.pro.live ? html`<span style="color:var(--hot)">● сейчас в эфире</span>` : `про-сцена ${g.short} · скоро`}</span>
+        <button class="kicker" data-act="tours" style="color:var(--acc)">все матчи →</button></div>
+      <div class="pad stack">${data.pro.ms.map((m) => pmCard(m, true))}</div>`;
+  }
+
   function tourBlock() {
     const T = data.tournaments;
-    return html`<div class="pad row" style="margin:24px 0 10px"><span class="kicker grow">турниры ${g.short}</span>
+    return html`${proBlock()}<div class="pad row" style="margin:24px 0 10px"><span class="kicker grow">турниры ${g.short}</span>
         <button class="kicker" data-act="tours" style="color:var(--acc)">все →</button></div>
       ${T.length ? html`<div class="pad stack">${T.map((t) => tourCard(t))}</div>`
         : html`<div class="pad"><button class="card line wide-card" data-act="tours">${icon("swords")}<span class="grow muted">Пока турниров нет. Загляни позже — или напиши админу, чтобы устроил.</span></button></div>`}
@@ -116,6 +127,7 @@ export function render(root) {
 
   const off = on(root, {
     ready: () => readySheet(load),
+    pro: (b) => openPro(+b.dataset.id, load),
     "add-game": () => editGame(S.game, { onSaved: load }),
     "ready-off": async () => { try { await api("/api/ready", { method: "DELETE" }); haptic.sel(); load(); } catch (e) { fail(e); } },
     who: (b) => openPerson(+b.dataset.id),
