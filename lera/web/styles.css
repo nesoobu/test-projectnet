@@ -907,3 +907,10 @@ details.faq p { margin: 0 0 16px; color: var(--mute); }
 .form i.w { background: var(--acc); color: var(--acc-ink); }
 .form i.l { background: color-mix(in srgb, var(--hot) 30%, var(--card2)); color: var(--hot); }
 .ibtn.on-acc { background: var(--acc); color: var(--acc-ink); }
+.pm-leagues .chip { height: 28px; font-size: 12px; }
+.pm-leagues .chip .mono { opacity: .6; font-size: 11px; }
+.team-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; text-align: center; }
+.team-stats b { display: block; font: 800 22px/1 var(--display); letter-spacing: -.03em; }
+.team-stats span { font-size: 11px; color: var(--mute); }
+.bet-row { display: grid; gap: 6px; }
+.bet-meta { display: flex; justify-content: space-between; gap: 10px; padding: 0 6px; }

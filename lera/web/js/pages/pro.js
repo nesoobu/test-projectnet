@@ -5,8 +5,13 @@ const STATUS = { live: "LIVE", done: "завершён", cancelled: "отмен�
 const FLAG = (cc) => cc && /^[A-Z]{2}$/.test(cc) ? String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0))) : "";
 const dt = (s) => new Date(s.replace(" ", "T") + "Z");
 const hm = (s) => dt(s).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
-const dayKey = (s) => dt(s).toLocaleDateString("ru", { weekday: "long", day: "numeric", month: "long" });
-const gameLabel = (m) => m.game ? GI(m.game).short : (m.game_name || "киберспорт");
+const dayKey = (s) => {
+  const d = dt(s), t = new Date(); t.setHours(0, 0, 0, 0);
+  const diff = Math.round((new Date(d).setHours(0, 0, 0, 0) - t) / 864e5);
+  const base = d.toLocaleDateString("ru", { day: "numeric", month: "long" });
+  return ({ "-1": "вчера", 0: "сегодня", 1: "завтра" })[diff] ? `${({ "-1": "вчера", 0: "сегодня", 1: "завтра" })[diff]}, ${base}` : d.toLocaleDateString("ru", { weekday: "long", day: "numeric", month: "long" });
+};
+const gameLabel = (m) => m.game_name === "Arena of Valor" ? "AoV" : m.game ? GI(m.game).short : (m.game_name || "киберспорт");
 const gameColor = (m) => m.game ? GI(m.game).color : "#8f897e";
 
 function logo(m, side, size = 34) {
@@ -26,7 +31,7 @@ export function pmCard(m, compact = false) {
     ${["a", "b"].map((s) => html`<div class="pm-team ${win(s) ? "win" : done && m.winner ? "lose" : ""}">${logo(m, s)}
       <b class="ell grow">${FLAG(m[`flag_${s}`])} ${m[`team_${s}`]}</b>${m.status !== "upcoming" ? html`<span class="pm-sc">${sc(s)}</span>` : ""}
       ${m.my_pick === s ? html`<span class="tag acc" title="твой прогноз">🔮</span>` : ""}</div>`)}
-    <div class="pm-foot mono"><span>${hm(m.begin_at)}</span><span>·</span><span style="color:var(--gc)">${gameLabel(m)}</span><span>·</span><span>Bo${m.best_of}</span>
+    <div class="pm-foot mono"><span>${dt(m.begin_at).toDateString() === new Date().toDateString() ? "" : dt(m.begin_at).toLocaleDateString("ru", { day: "numeric", month: "short" }) + " "}${hm(m.begin_at)}</span><span>·</span><span style="color:var(--gc)">${gameLabel(m)}</span><span>·</span><span>Bo${m.best_of}</span>
       ${m.streams?.length ? html`<span>·</span><span>${icon("eye", 'width="12" height="12"')} стрим</span>` : ""}${m.followed ? html`<span class="grow"></span>${icon("bell", 'width="13" height="13"')}` : ""}</div>
   </button>`;
 }
@@ -34,7 +39,7 @@ export function pmCard(m, compact = false) {
 // ─── хаб турниров ───
 export function openTournaments(mode = "pro") {
   pushScreen((el, pop) => {
-    let tab = "live", game = "all", data = null, auto = true;
+    let tab = "live", game = "all", data = null, auto = true, league = "";
     const games = [...new Set([...(S.me.games || []).map((x) => x.game)])];
 
     function frame() {
@@ -75,8 +80,12 @@ export function openTournaments(mode = "pro") {
     function drawPro() {
       const b = el.querySelector("#tb");
       if (!b || !data) return;
+      const lcount = {};
+      for (const m of data.matches) if (m.league) lcount[m.league] = (lcount[m.league] || 0) + 1;
+      const leagues = Object.entries(lcount).sort((a, b2) => b2[1] - a[1]).slice(0, 14);
+      if (league && !lcount[league]) league = "";
       const groups = [];
-      for (const m of data.matches) {
+      for (const m of data.matches.filter((x) => !league || x.league === league)) {
         const k = dayKey(m.begin_at);
         let g = groups.find((x) => x.k === k);
         if (!g) groups.push(g = { k, ms: [] });
@@ -88,15 +97,17 @@ export function openTournaments(mode = "pro") {
       mount(b, html`<div class="pad" style="margin-top:14px">
           <div class="pm-tabs">${[["live", "Идут"], ["soon", "Скоро"], ["past", "Прошедшие"]].map(([k, t]) => html`<button class="${tab === k ? "on" : ""} ${k === "live" && data.counts.live ? "has-live" : ""}" data-act="tab" data-v="${k}">
             ${k === "live" && data.counts.live ? html`<i></i>` : ""}${t}${k !== "past" && data.counts[k] ? html` <span class="mono">${data.counts[k]}</span>` : ""}</button>`)}</div>
-          <div class="chips scroll" style="margin-top:12px">${gchips.map(([k, t]) => html`<button class="chip ${game === k ? "on" : ""}" data-act="game" data-v="${k}">${t}</button>`)}</div></div>
+          <div class="chips scroll" style="margin-top:12px">${gchips.map(([k, t]) => html`<button class="chip ${game === k ? "on" : ""}" data-act="game" data-v="${k}">${t}</button>`)}</div>
+          ${leagues.length > 1 ? html`<div class="chips scroll pm-leagues" style="margin-top:8px"><button class="chip ${!league ? "on" : ""}" data-act="league" data-v="">все лиги</button>
+            ${leagues.map(([l, n]) => html`<button class="chip ${league === l ? "on" : ""}" data-act="league" data-v="${l}">${l} <span class="mono">${n}</span></button>`)}</div>` : ""}
+          <div class="row" style="gap:8px;margin-top:12px"><button class="btn sm dark grow" data-act="mybets">🔮 мои прогнозы</button><button class="btn sm dark grow" data-act="topbets">🏆 топ</button></div></div>
         ${groups.length ? groups.map((g) => html`<div class="pad pm-day"><span>${g.k}</span><span class="mono">${g.ms.length}</span></div>
           <div class="pad stack">${g.ms.map((m) => pmCard(m))}</div>`)
           : data.next?.length ? html`<div class="pad" style="margin-top:18px">${leraSays(`${empty} Ближайшие матчи:`)}</div>
               <div class="pad stack" style="margin-top:12px">${data.next.map((m) => pmCard(m))}</div>
               <div class="pad" style="margin-top:10px"><button class="btn dark wide" data-act="tab" data-v="soon">все ближайшие · ${data.counts.soon}</button></div>`
           : html`<div class="empty">${leraSays(`${empty} ${data.sources.length ? "" : "Источники ещё загружаются — первые матчи появятся в течение 15 минут после запуска."}`)}</div>`}
-        <p class="pad small muted center" style="margin-top:20px">🔮 Прогнозы на несо до начала матча · 🔔 уведомления о старте и результате<br>
-          данные: ${data.sources.includes("pandascore") ? "PandaScore, " : ""}Liquipedia (CC-BY-SA)</p><div class="sp"></div>`);
+        <div class="sp"></div>`);
     }
 
     frame();
@@ -105,7 +116,10 @@ export function openTournaments(mode = "pro") {
       back: pop,
       mode: (x) => { mode = x.dataset.v; haptic.sel(); frame(); },
       tab: (x) => { tab = x.dataset.v; haptic.sel(); loadPro(); },
-      game: (x) => { game = x.dataset.v; haptic.sel(); loadPro(); },
+      game: (x) => { game = x.dataset.v; league = ""; haptic.sel(); loadPro(); },
+      league: (x) => { league = x.dataset.v; haptic.sel(); drawPro(); },
+      mybets: () => myBets(),
+      topbets: () => topBets(),
       pro: (x) => openPro(+x.dataset.id, loadPro),
       tour: async (x) => (await import("./more.js")).openTournament(+x.dataset.id, loadLera),
       create: async () => (await import("./more.js")).tourCreate(loadLera),
@@ -138,8 +152,8 @@ export function openPro(id, onChange) {
           <div class="pm-vs">
             ${["a", "b"].map((s, i) => html`${i ? html`<div class="pm-mid">${m.status === "upcoming" ? html`<b class="mono">${hm(m.begin_at)}</b><span>${d.toLocaleDateString("ru", { day: "numeric", month: "short" })}</span>`
                 : html`<b class="pm-big">${m.score_a ?? 0}<em>:</em>${m.score_b ?? 0}</b><span class="${live ? "live" : ""}">${live ? "● LIVE" : STATUS[m.status]}</span>`}<span class="mono">Bo${m.best_of}</span></div>` : ""}
-              <button class="pm-side ${done && m.winner === s ? "win" : ""}" data-act="team" data-s="${s}">${logo(m, s, 64)}<b>${m[`team_${s}`]}</b>
-                <span class="tag ${m.team_followed[s] ? "acc" : ""}">${m.team_followed[s] ? "★ слежу" : "☆ следить"}</span></button>`)}
+              <div class="pm-side ${done && m.winner === s ? "win" : ""}"><button data-act="teampage" data-s="${s}" style="display:grid;justify-items:center;gap:8px">${logo(m, s, 64)}<b>${m[`team_${s}`]}</b></button>
+                <button class="tag ${m.team_followed[s] ? "acc" : ""}" data-act="team" data-s="${s}">${m.team_followed[s] ? "★ слежу" : "☆ следить"}</button></div>`)}
           </div>
         </div>
         <div class="pad">
@@ -177,6 +191,7 @@ export function openPro(id, onChange) {
         const team = m[`team_${b.dataset.s}`];
         try { const r = await api("/api/pro/team", { method: "POST", body: { team } }); haptic.sel(); toast(r.followed ? `Слежу за ${team}: напишу перед каждым матчем` : `Больше не слежу за ${team}`, "ok"); load(); } catch (e) { fail(e); }
       },
+      teampage: (b) => openTeam(m[`team_${b.dataset.s}`]),
       stream: (b) => (tg?.openLink ? tg.openLink(b.dataset.v) : window.open(b.dataset.v, "_blank")),
       share: () => {
         const link = `https://t.me/${S.dict.bot}?start=x${id}`;
@@ -249,5 +264,74 @@ function adminSheet(done) {
         try { await api("/api/admin/pro", { method: "POST", body }); toast("Матч добавлен", "ok"); close(); done?.(); } catch (e) { fail(e); }
       },
     });
+  });
+}
+
+// ─── команда ───
+export function openTeam(name) {
+  pushScreen((el, pop) => {
+    let t = null;
+    const load = async () => {
+      try { t = await api(`/api/pro/team?name=${encodeURIComponent(name)}`); } catch (e) { fail(e); return pop(); }
+      draw();
+    };
+    function draw() {
+      const color = t.game ? GI(t.game).color : "#8f897e";
+      const wr = t.played ? Math.round((t.wins / t.played) * 100) : null;
+      const form = t.recent.slice(0, 10).map((m) => (m.winner === (m.team_a === t.name ? "a" : "b") ? "W" : "L"));
+      mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker grow ell">${t.game_name || (t.game ? GI(t.game).name : "")}</span></div>
+        <div class="pm-hero" style="--gc:${color}">
+          <div class="pm-wm big"><span>${t.acr || ""}</span></div>
+          ${t.logo ? html`<img class="pm-logo" src="${t.logo}" alt="" style="--s:84px;margin:0 auto">` : html`<i class="pm-logo txt" style="--s:84px;margin:0 auto">${(t.acr || "?").slice(0, 4)}</i>`}
+          <h1 class="h1" style="text-transform:none;font-size:28px;margin-top:12px">${FLAG(t.flag)} ${t.name}</h1>
+          <div class="team-stats"><div><b>${t.played}</b><span>матчей</span></div><div><b>${wr ?? "—"}${wr != null ? "%" : ""}</b><span>побед</span></div><div><b>${t.fans}</b><span>следят в Лере</span></div></div>
+          <button class="btn ${t.followed ? "dark" : ""} wide" style="margin-top:14px" data-act="follow">${t.followed ? "★ слежу — напишу перед матчами" : "☆ следить за командой"}</button>
+        </div>
+        <div class="pad">
+          ${form.length ? html`<div class="kicker" style="margin-bottom:8px">форма · последние ${form.length}</div><div class="form">${form.map((x) => html`<i class="${x === "W" ? "w" : "l"}">${x === "W" ? "В" : "П"}</i>`)}</div>` : ""}
+          ${t.leagues.length ? html`<div class="kicker" style="margin:18px 0 8px">лиги</div><div class="chips">${t.leagues.map((l) => html`<span class="chip">${l}</span>`)}</div>` : ""}
+          <div class="kicker" style="margin:22px 0 10px">ближайшие матчи</div>
+          ${t.upcoming.length ? html`<div class="stack">${t.upcoming.map((m) => pmCard(m, true))}</div>` : html`<p class="small muted">Пока нет в расписании.</p>`}
+          <div class="kicker" style="margin:22px 0 10px">результаты</div>
+          ${t.recent.length ? html`<div class="stack">${t.recent.map((m) => pmCard(m, true))}</div>` : html`<p class="small muted">Нет данных.</p>`}
+          <div class="sp"></div></div>`);
+    }
+    load();
+    return on(el, {
+      back: pop,
+      pro: (b) => openPro(+b.dataset.id, load),
+      follow: async () => { try { const r = await api("/api/pro/team", { method: "POST", body: { team: name } }); haptic.sel(); toast(r.followed ? `Слежу за ${name}` : "Больше не слежу", "ok"); load(); } catch (e) { fail(e); } },
+    });
+  });
+}
+
+// ─── мои прогнозы и топ ───
+function myBets() {
+  pushScreen((el, pop) => {
+    mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker grow">// прогнозы</span></div><div class="spinner"></div>`);
+    (async () => {
+      let r; try { r = await api("/api/pro/my"); } catch (e) { fail(e); return pop(); }
+      mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker grow">// прогнозы</span></div>
+        <div class="pad" style="margin:4px 0 16px"><h1 class="h1">мои прогнозы<i>.</i></h1></div>
+        <div class="pad"><div class="team-stats card"><div><b>${r.settled ? Math.round((r.won / r.settled) * 100) : 0}%</b><span>угадано</span></div>
+          <div><b style="color:${r.profit >= 0 ? "var(--acc)" : "var(--hot)"}">${r.profit >= 0 ? "+" : ""}${r.profit}</b><span>несо итог</span></div><div><b>${r.open}</b><span>ждут матча</span></div></div></div>
+        ${r.bets.length ? html`<div class="pad stack" style="margin-top:14px">${r.bets.map((b) => html`<div class="bet-row">${pmCard(b, true)}
+          <div class="bet-meta small"><span>ставка на <b>${b[`team_${b.pick}`]}</b> · ${b.stake}</span>
+          ${b.payout == null ? html`<span class="muted">ждём результат</span>` : html`<b style="color:${b.payout > b.stake ? "var(--acc)" : "var(--hot)"}">${b.payout > b.stake ? `+${b.payout}` : b.payout === b.stake ? "возврат" : "мимо"}</b>`}</div></div>`)}</div>`
+          : html`<div class="empty">${leraSays("Ты ещё не делал прогнозов. Открой любой матч из «Скоро» и поставь несо на победителя.")}</div>`}<div class="sp"></div>`);
+    })();
+    return on(el, { back: pop, pro: (b) => openPro(+b.dataset.id) });
+  });
+}
+
+function topBets() {
+  sheet(async (el) => {
+    mount(el, html`<div class="spinner"></div>`);
+    let r; try { r = await api("/api/pro/top"); } catch (e) { return fail(e); }
+    const { avatar } = await import("../core.js");
+    mount(el, html`<h2 class="h2">топ прогнозистов<span class="dot">.</span></h2><p class="small muted" style="margin:6px 0 14px">за 30 дней · минимум 3 прогноза</p>
+      ${r.top.length ? html`<div class="list">${r.top.map((x, i) => html`<div class="li"><span class="mono" style="width:22px">${i + 1}</span>${avatar(x.user, 36)}
+        <div class="grow"><b>${x.user.name}</b><div class="small muted">${x.wins}/${x.n} угадано</div></div><b style="color:${x.profit >= 0 ? "var(--acc)" : "var(--hot)"}">${x.profit >= 0 ? "+" : ""}${x.profit}</b></div>`)}</div>`
+        : leraSays("Пока пусто — стань первым, кто попадёт в топ.")}`);
   });
 }

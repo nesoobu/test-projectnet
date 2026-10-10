@@ -377,6 +377,38 @@ async def pro_comment(mid: int, body: CommentIn, me=Me):
     return {"id": cid}
 
 
+@router.get("/pro/team")
+async def pro_team(name: str, me=Me):
+    rows = await db.all_("SELECT * FROM pro_matches WHERE (team_a=? OR team_b=?) AND status<>'cancelled' ORDER BY begin_at DESC LIMIT 60", name, name)
+    if not rows:
+        raise HTTPException(404, "Нет данных о команде")
+    side = lambda r: "a" if r["team_a"] == name else "b"
+    done = [r for r in rows if r["status"] == "done" and r["winner"]]
+    wins = sum(1 for r in done if r["winner"] == side(r))
+    last = next((r for r in rows if r[f"logo_{side(r)}"]), rows[0])
+    s0 = side(last)
+    leagues = []
+    for r in rows:
+        if r["league"] and r["league"] not in leagues:
+            leagues.append(r["league"])
+    return {"name": name, "logo": last[f"logo_{s0}"], "acr": last[f"acr_{s0}"], "flag": last[f"flag_{s0}"], "game": last["game"],
+            "game_name": last["game_name"], "played": len(done), "wins": wins, "leagues": leagues[:6],
+            "followed": bool(await db.one("SELECT 1 FROM pro_team_follow WHERE tg_id=? AND team=?", me["tg_id"], name)),
+            "fans": await db.val("SELECT COUNT(*) FROM pro_team_follow WHERE team=?", name),
+            "upcoming": [view(r) for r in reversed(rows) if r["status"] in ("upcoming", "live")][:10],
+            "recent": [view(r) for r in rows if r["status"] == "done"][:15]}
+
+
+@router.get("/pro/my")
+async def pro_my(me=Me):
+    rows = await db.all_("SELECT p.pick, p.stake, p.payout, p.created_at AS bet_at, m.* FROM pro_preds p JOIN pro_matches m ON m.id=p.match_id "
+                         "WHERE p.tg_id=? ORDER BY p.created_at DESC LIMIT 50", me["tg_id"])
+    settled = [r for r in rows if r["payout"] is not None]
+    return {"bets": [{**view(r), "pick": r["pick"], "stake": r["stake"], "payout": r["payout"]} for r in rows],
+            "won": sum(1 for r in settled if r["payout"] > r["stake"]), "settled": len(settled),
+            "profit": sum((r["payout"] or 0) - r["stake"] for r in settled), "open": len(rows) - len(settled)}
+
+
 @router.get("/pro/top")
 async def pro_top(me=Me):
     """Топ прогнозистов за 30 дней."""

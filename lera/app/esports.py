@@ -18,6 +18,7 @@ UA = "LeraBot/7.1 (Telegram mini app lera.lerarubot.ru; esports schedule widget)
 PS_GAME = {"cs-go": "cs2", "cs-2": "cs2", "csgo": "cs2", "dota-2": "dota2", "dota2": "dota2", "valorant": "valorant",
            "kog": "hok", "king-of-glory": "hok", "honor-of-kings": "hok", "mlbb": "mlbb", "mobile-legends": "mlbb",
            "pubg-mobile": "pubgm", "brawl-stars": "brawl"}
+AOV = re.compile(r"\b(RoV|AoV|Arena of (Glory|Valor)|Li[eê]n Qu[aâ]n|AIC|APL|GCS|AWC|Saigon|Thailand)\b", re.I)
 # вики Liquipedia → наша игра
 LQ_WIKI = {"dota2": "dota2", "counterstrike": "cs2", "valorant": "valorant", "mobilelegends": "mlbb",
            "honorofkings": "hok", "pubgmobile": "pubgm", "brawlstars": "brawl", "wildrift": None, "leagueoflegends": None}
@@ -56,6 +57,11 @@ def ps_match(m: dict) -> dict | None:
     a, b = opp[0], opp[1]
     res = {r.get("team_id") or r.get("player_id"): r.get("score") for r in (m.get("results") or [])}
     vg = m.get("videogame") or {}
+    lname = (m.get("league") or {}).get("name") or ""
+    gname = vg.get("name") or ""
+    if vg.get("slug") in ("kog", "king-of-glory", "honor-of-kings"):
+        # PandaScore складывает в King of Glory и Arena of Valor (RoV, AoG, AIC) — разделяем по лиге
+        gname = "Arena of Valor" if AOV.search(lname) else "HoK"
     st = {"running": "live", "finished": "done", "canceled": "cancelled", "postponed": "upcoming"}.get(m.get("status"), "upcoming")
     win = m.get("winner_id")
     streams = [{"url": s.get("raw_url"), "lang": s.get("language"), "main": bool(s.get("main"))}
@@ -63,7 +69,7 @@ def ps_match(m: dict) -> dict | None:
     league = (m.get("league") or {})
     serie = (m.get("serie") or {})
     return {
-        "id": f"ps:{m['id']}", "source": "pandascore", "game": PS_GAME.get(vg.get("slug", "")), "game_name": vg.get("name") or "",
+        "id": f"ps:{m['id']}", "source": "pandascore", "game": PS_GAME.get(vg.get("slug", "")), "game_name": gname,
         "league": league.get("name") or "", "league_img": league.get("image_url"),
         "tournament": " · ".join(x for x in (serie.get("full_name"), (m.get("tournament") or {}).get("name")) if x),
         "best_of": m.get("number_of_games") or 1, "status": st,
