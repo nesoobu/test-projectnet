@@ -19,10 +19,12 @@ export async function wikiData(game, fresh = false) {
   return cache[game];
 }
 
-export const dname = (h) => h.ru || h.name;   // русское имя, если есть
+export const dname = (h) => h.ru || h.name;
+// портрет героя (если загружен) или буквы на цветной плашке
+export const face = (name, img) => img ? html`<img class="face" src="${img}" alt="" loading="lazy" onerror="this.remove()">` : glyph(name);   // русское имя, если есть
 const tierBadge = (t, big = false) => t ? html`<span class="tier ${big ? "big" : ""}" style="--tc:${TIER_C[t]}">${t}</span>` : "";
 const heroTile = (h, isMap) => html`<button class="htile" data-act="hero" data-v="${h.name}" style="--hc:${clsColor(h.cls)}">
-  <div class="hg">${glyph(dname(h))}${tierBadge(h.lera_tier || h.tier)}</div>
+  <div class="hg ${h.img ? "has-img" : ""}">${face(dname(h), h.img)}${tierBadge(h.lera_tier || h.tier)}</div>
   <b class="ell">${dname(h)}</b><span class="small muted ell">${h.ru ? h.name : isMap ? (h.mains ? `любят ${h.mains}` : "карта") : h.lane_name || h.cls}</span></button>`;
 
 async function toggleMain(game, name) {
@@ -122,7 +124,7 @@ export function openWiki(game0) {
           ${rated.length ? html`<div class="tierlist">${TIERS.map((t) => {
             const hs = rated.filter((h) => h[key] === t).sort((a, b2) => (a.score ?? 0) - (b2.score ?? 0));
             return html`<div class="trow"><div class="tl" style="--tc:${TIER_C[t]}">${t}</div>
-              <div class="tc">${hs.length ? hs.map((h) => html`<button class="tchip" data-act="hero" data-v="${h.name}" style="--hc:${clsColor(h.cls)}"><i>${glyph(dname(h))}</i>${dname(h)}</button>`) : html`<span class="small muted">—</span>`}</div></div>`;
+              <div class="tc">${hs.length ? hs.map((h) => html`<button class="tchip" data-act="hero" data-v="${h.name}" style="--hc:${clsColor(h.cls)}"><i>${face(dname(h), h.img)}</i>${dname(h)}</button>`) : html`<span class="small muted">—</span>`}</div></div>`;
           })}</div>` : html`<div class="empty">${leraSays(src === "lera" ? "Мой тир-лист ещё готовится — модераторы скоро заполнят. Пока смотри тир от игроков." : "Ещё никто не голосовал — будь первым.")}</div>`}
           ${rated.length && rated.length < data.heroes.length ? html`<p class="small muted center" style="margin-top:14px">Ещё без оценки: ${data.heroes.length - rated.length}</p>` : ""}
           <div class="sp"></div></div>`);
@@ -183,7 +185,7 @@ function quickRate(game, data, done, lera = false) {
       if (!h) return mount(el, html`<div class="center"><h2 class="h2">готово!</h2><p class="muted">Оценено: ${n}</p><button class="btn wide" data-act="end">к тир-листу</button></div>`);
       const cur = lera ? h.lera_tier : h.tier;
       mount(el, html`<div class="row"><span class="kicker grow">${lera ? "тир Леры" : "быстрая оценка"} · ${n}</span><button class="tag" data-act="end">хватит</button></div>
-        <div class="qr-hero" style="--hc:${clsColor(h.cls)}"><div class="hg big">${glyph(dname(h))}</div><h2 class="h2">${dname(h)}</h2>
+        <div class="qr-hero" style="--hc:${clsColor(h.cls)}"><div class="hg big ${h.img ? "has-img" : ""}">${face(dname(h), h.img)}</div><h2 class="h2">${dname(h)}</h2>
           <span class="small muted">${h.ru ? `${h.name} · ` : ""}${h.cls}${h.lane_name ? ` · ${h.lane_name}` : ""}${cur ? ` · сейчас ${cur}` : ""}</span></div>
         <div class="tier-pick">${TIERS.map((t, k) => html`<button data-act="t" data-v="${k}" style="--tc:${TIER_C[t]}">${t}</button>`)}</div>
         <button class="btn ghost wide sm" style="margin-top:10px" data-act="skip">не знаю — дальше</button>`);
@@ -200,12 +202,14 @@ function quickRate(game, data, done, lera = false) {
 // ─── страница героя ───
 export function openHero(game, name, onChange) {
   pushScreen((el, pop) => {
-    let h = null, changed = false, htab = "art", ru = {};
+    let h = null, changed = false, htab = "art", ru = {}, im = {};
     const cn = (n) => ru[n] || n;
     const load = async () => {
       try {
         h = await api(`/api/wiki/hero?game=${game}&name=${encodeURIComponent(name)}`);
-        ru = Object.fromEntries(((await wikiData(game).catch(() => ({ heroes: [] }))).heroes || []).filter((x) => x.ru).map((x) => [x.name, x.ru]));
+        const all = (await wikiData(game).catch(() => ({ heroes: [] }))).heroes || [];
+        ru = Object.fromEntries(all.filter((x) => x.ru).map((x) => [x.name, x.ru]));
+        im = Object.fromEntries(all.filter((x) => x.img).map((x) => [x.name, x.img]));
         if (h.ru) ru[h.name] = h.ru;
         h.ctr = h.cls === "Карта" ? null : await api(`/api/wiki/counters?game=${game}&hero=${encodeURIComponent(name)}`).catch(() => null);
       } catch (e) { fail(e); return pop(); }
@@ -214,6 +218,7 @@ export function openHero(game, name, onChange) {
     function article() {
       const a = h.article, isMap = h.cls === "Карта";
       const editBtn = html`<button class="btn ${a ? "dark" : ""} wide" style="margin-top:14px" data-act="edit">${icon("edit")}${S.me.is_mod ? (a ? "редактировать статью" : "написать статью") : (a ? "предложить правку · +50 несо" : "написать статью · +50 несо")}</button>
+        ${S.me.is_mod ? html`<button class="btn ghost wide sm" style="margin-top:8px" data-act="icon">${icon("image")}${h.img ? "сменить портрет" : "загрузить портрет"}</button>` : ""}
         ${S.me.is_mod && h.pending_edits ? html`<p class="small" style="margin:8px 0 0;color:var(--acc)">На проверке правок: ${h.pending_edits} — Вики → 🛡 правки</p>` : ""}`;
       if (!a) return html`<div class="wsec">${h.role_desc ? html`<div class="card"><div class="kicker">${h.lane_name}</div><p style="margin:8px 0 0">${h.role_desc}</p></div>` : ""}
         <div class="empty" style="padding:24px 0 0">${leraSays(`Статьи про ${cn(h.name)} ещё нет. Напиши её — навыки, сборку, комбо, сильные и слабые стороны. После проверки дам 50 несо.`)}</div>${editBtn}</div>`;
@@ -240,7 +245,7 @@ export function openHero(game, name, onChange) {
       mount(el, html`<div class="wiki" style="--gc:${g.color};--hc:${clsColor(h.cls)}">
         <div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker grow" style="text-align:right">${g.name}</span></div>
         <div class="hero-banner">
-          <div class="hg huge">${glyph(cn(h.name))}${tierBadge(h.lera_tier || h.tier, true)}</div>
+          <div class="hg huge ${h.img ? "has-img" : ""}">${face(cn(h.name), h.img)}${tierBadge(h.lera_tier || h.tier, true)}</div>
           <div class="grow" style="min-width:0"><h1 class="h1">${cn(h.name)}</h1>
             ${h.ru || h.article?.epithet ? html`<div class="small muted" style="margin-top:4px">${[h.ru ? h.name : "", h.article?.epithet].filter(Boolean).join(" · ")}</div>` : ""}
             <div class="row wrap" style="gap:6px;margin-top:10px"><span class="tag">${h.cls}</span>${h.lane_name ? html`<span class="tag">${h.lane_name}</span>` : ""}
@@ -265,8 +270,8 @@ export function openHero(game, name, onChange) {
 
           ${h.ctr ? html`<div class="wsec"><div class="row"><div class="kicker grow">контрпики · голосуют игроки</div><button class="tag" data-act="ctradd" data-k="by">+ кто контрит</button></div>
             <div class="ctr-grid">
-              <div><div class="small muted" style="margin-bottom:8px">его контрят</div>${h.ctr.countered_by.length ? h.ctr.countered_by.map((c) => html`<button class="ctr ${c.mine ? "mine" : ""}" data-act="ctrvote" data-k="by" data-v="${c.name}" style="--hc:${clsColor((h.allcls || {})[c.name])}"><i>${glyph(cn(c.name))}</i><span class="ell grow">${cn(c.name)}</span><b class="mono">${c.n}</b></button>`) : html`<p class="small muted">пока никто не отметил</p>`}</div>
-              <div><div class="small muted" style="margin-bottom:8px">он контрит</div>${h.ctr.counters.length ? h.ctr.counters.map((c) => html`<button class="ctr ${c.mine ? "mine" : ""}" data-act="ctrvote" data-k="of" data-v="${c.name}"><i>${glyph(cn(c.name))}</i><span class="ell grow">${cn(c.name)}</span><b class="mono">${c.n}</b></button>`) : html`<button class="tag" data-act="ctradd" data-k="of">+ кого он контрит</button>`}</div>
+              <div><div class="small muted" style="margin-bottom:8px">его контрят</div>${h.ctr.countered_by.length ? h.ctr.countered_by.map((c) => html`<button class="ctr ${c.mine ? "mine" : ""}" data-act="ctrvote" data-k="by" data-v="${c.name}" style="--hc:${clsColor((h.allcls || {})[c.name])}"><i>${face(cn(c.name), im[c.name])}</i><span class="ell grow">${cn(c.name)}</span><b class="mono">${c.n}</b></button>`) : html`<p class="small muted">пока никто не отметил</p>`}</div>
+              <div><div class="small muted" style="margin-bottom:8px">он контрит</div>${h.ctr.counters.length ? h.ctr.counters.map((c) => html`<button class="ctr ${c.mine ? "mine" : ""}" data-act="ctrvote" data-k="of" data-v="${c.name}"><i>${face(cn(c.name), im[c.name])}</i><span class="ell grow">${cn(c.name)}</span><b class="mono">${c.n}</b></button>`) : html`<button class="tag" data-act="ctradd" data-k="of">+ кого он контрит</button>`}</div>
             </div><p class="small muted" style="margin:8px 0 0">Тап по герою — голос «согласен» (ещё тап — убрать).</p></div>` : ""}
           ` : ""}
           ${htab === "com" ? html`
@@ -309,6 +314,19 @@ export function openHero(game, name, onChange) {
       guide: (b) => openGuide(+b.dataset.id, load),
       write: () => guideEditor(game, h.name, () => { changed = true; load(); }),
       sim: (b) => openHero(game, b.dataset.v, onChange),
+      icon: () => {
+        const inp = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" });
+        inp.onchange = async () => {
+          if (!inp.files[0]) return;
+          try {
+            const { uploadImage } = await import("./feed.js");
+            const url = await uploadImage(inp.files[0]);
+            await api("/api/wiki/icon", { method: "POST", body: { game, hero: h.name, image: url } });
+            haptic.ok(); toast("Портрет обновлён", "ok"); changed = true; await wikiData(game, true); load();
+          } catch (e) { fail(e); }
+        };
+        inp.click();
+      },
       htab: (b) => { htab = b.dataset.v; haptic.sel(); draw(); },
       ltier: async (b) => {
         const v = +b.dataset.v;
@@ -462,9 +480,13 @@ function articleEditor(game, h, done) {
 function openEdits(done) {
   pushScreen((el, pop) => {
     const load = async () => {
-      let r; try { r = await api("/api/admin/hero-edits"); } catch (e) { fail(e); return pop(); }
+      let r, ic; try { [r, ic] = await Promise.all([api("/api/admin/hero-edits"), api("/api/admin/hero-icons")]); } catch (e) { fail(e); return pop(); }
       mount(el, html`<div class="backbar"><button class="ibtn" data-act="back">${icon("back")}</button><span class="kicker grow">// модерация вики</span></div>
         <div class="pad" style="margin:4px 0 16px"><h1 class="h1">правки<i>.</i></h1></div>
+        <div class="pad" style="margin-bottom:16px"><div class="card"><div class="row"><div class="grow"><b>Портреты героев</b>
+          <div class="small muted" style="margin-top:4px">${ic.running ? "загружаю… обнови экран через пару минут" : `загружено: ${ic.count}`}${ic.last ? " · " + ic.last.map((x) => `${GI(x.game).short} ${x.ok}/${x.total}`).join(", ") : ""}</div></div>
+          <button class="btn sm" data-act="icons" ${ic.running ? "disabled" : ""}>${icon("image")}скачать</button></div>
+          <p class="small muted" style="margin:8px 0 0">Подтягивает недостающие портреты из открытых источников. Свой портрет можно загрузить на странице героя — его не перезапишет.</p></div></div>
         ${r.items.length ? html`<div class="pad stack">${r.items.map((x) => html`<div class="card"><div class="row"><b class="grow">${GI(x.game).short} · ${x.data.ru_name || x.hero}</b><span class="small muted">${x.user?.name}</span></div>
           ${x.data.note ? html`<p class="small" style="margin:6px 0 0">💬 ${x.data.note}</p>` : ""}
           ${x.current ? html`<p class="small muted" style="margin:6px 0 0">Статья уже есть — правка заменит её целиком.</p>` : ""}
@@ -474,6 +496,7 @@ function openEdits(done) {
     };
     load();
     const mod = async (id, ok) => { try { await api(`/api/admin/hero-edits/${id}`, { method: "POST", body: { ok } }); haptic.ok(); load(); done?.(); } catch (e) { fail(e); } };
-    return on(el, { back: pop, ok: (b) => mod(b.dataset.id, true), no: (b) => mod(b.dataset.id, false) });
+    return on(el, { back: pop, ok: (b) => mod(b.dataset.id, true), no: (b) => mod(b.dataset.id, false),
+      icons: async () => { try { await api("/api/admin/hero-icons", { method: "POST" }); toast("Скачиваю портреты в фоне — 1–3 минуты", "ok"); load(); } catch (e) { fail(e); } } });
   });
 }

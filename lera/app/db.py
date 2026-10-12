@@ -282,6 +282,8 @@ CREATE TABLE IF NOT EXISTS hero_info (game TEXT NOT NULL, hero TEXT NOT NULL, da
     updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (game, hero));
 CREATE TABLE IF NOT EXISTS hero_edits (id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT NOT NULL, hero TEXT NOT NULL,
     tg_id INTEGER NOT NULL, data TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+CREATE TABLE IF NOT EXISTS hero_img (game TEXT NOT NULL, hero TEXT NOT NULL, url TEXT NOT NULL, source TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (game, hero));
 CREATE TABLE IF NOT EXISTS t_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT, tid INTEGER NOT NULL, sender INTEGER NOT NULL, text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))

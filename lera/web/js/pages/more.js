@@ -204,8 +204,8 @@ export function heroPicker(game, selected, done) {
     mount(el, html`<div class="row" style="margin-bottom:12px"><h2 class="h2 grow">мейны</h2><button class="btn sm" data-act="ok">готово</button></div>
       <input class="input" id="q" placeholder="Поиск…" autocomplete="off"><div id="hl" style="margin-top:12px"></div>`);
     let list = [];
-    const draw = () => mount(el.querySelector("#hl"), html`<div class="chips">${list.filter((h) => !q || h.name.toLowerCase().includes(q)).map((h) =>
-      html`<button class="chip ${sel.includes(h.name) ? "on" : ""}" data-act="h" data-v="${h.name}">${h.name}</button>`)}</div>`);
+    const draw = () => mount(el.querySelector("#hl"), html`<div class="chips">${list.filter((h) => !q || h.name.toLowerCase().includes(q) || (h.ru || "").toLowerCase().includes(q)).map((h) =>
+      html`<button class="chip ldl-sug ${sel.includes(h.name) ? "on" : ""}" data-act="h" data-v="${h.name}">${h.img ? html`<img class="ldl-ic" src="${h.img}" alt="" loading="lazy">` : ""}${h.ru || h.name}</button>`)}</div>`);
     wikiData(game).then((d) => { list = d.heroes || []; draw(); }).catch(fail);
     el.querySelector("#q").addEventListener("input", (e) => { q = e.target.value.trim().toLowerCase(); draw(); });
     on(el, {
@@ -500,7 +500,9 @@ export function tourCreate(done) {
 const ENT1 = { "Герои": ["героя", "Имя героя…"], "Агенты": ["агента", "Имя агента…"], "Бойцы": ["бойца", "Имя бойца…"], "Персонажи": ["персонажа", "Имя персонажа…"] };
 export function openLeradle(onDone, game0) {
   screen("лерадл", "// угадай по подсказкам", (b) => {
-    let st = null, q = "";
+    let st = null, q = "", hm = {};
+    const hmFor = (g) => wikiData(g).then((d) => { hm = Object.fromEntries((d.heroes || []).map((x) => [x.name, x])); draw(); }).catch(() => {});
+    const pic = (n, cls = "ldl-ic") => hm[n]?.img ? html`<img class="${cls}" src="${hm[n].img}" alt="" loading="lazy">` : "";
     let game = game0 || ((S.dict.leradle_games || ["hok"]).includes(S.game) ? S.game : "hok");
     const H = { up: "↑", down: "↓", eq: "=" };
     const draw = () => {
@@ -508,19 +510,19 @@ export function openLeradle(onDone, game0) {
       const used = new Set(st.guesses.map((x) => x.name));
       const [who, ph] = ENT1[st.entity] || ENT1["Герои"];
       const gs = st.games || [];
-      const sugg = q ? st.names.filter((n) => n.toLowerCase().includes(q) && !used.has(n)).slice(0, 8) : [];
+      const sugg = q ? st.names.filter((n) => (n.toLowerCase().includes(q) || (hm[n]?.ru || "").toLowerCase().includes(q)) && !used.has(n)).slice(0, 8) : [];
       mount(b, html`<div class="pad">
         ${gs.length > 1 ? html`<div class="chips scroll" style="margin-bottom:14px">${gs.map((x) => html`<button class="chip ${x === st.game ? "on" : ""}" data-act="g" data-v="${x}" style="${x === st.game ? `--acc:${GI(x).color}` : ""}">${GI(x).short}</button>`)}</div>` : ""}
         ${!st.over ? html`<p class="muted small" style="margin:0 0 12px">Угадай ${who} ${GI(st.game).name} дня. После каждой попытки — подсказки: тип, роль, длина имени и первая буква. ${st.max} попыток. У каждой игры своя загадка.</p>
           <input class="input" id="lq" placeholder="${ph}" autocomplete="off" value="${q}">
-          ${sugg.length ? html`<div class="chips" style="margin-top:10px">${sugg.map((n) => html`<button class="chip" data-act="guess" data-v="${n}">${n}</button>`)}</div>` : ""}`
+          ${sugg.length ? html`<div class="chips" style="margin-top:10px">${sugg.map((n) => html`<button class="chip ldl-sug" data-act="guess" data-v="${n}">${pic(n)}${n}${hm[n]?.ru ? html` <span class="muted">· ${hm[n].ru}</span>` : ""}</button>`)}</div>` : ""}`
         : html`<div class="card center" style="border:2px solid ${st.solved ? "var(--acc)" : "var(--hot)"}">
             <div class="kicker">${st.solved ? "разгадано" : "не вышло"} · стрик ${st.streak}</div>
-            <div class="h2" style="margin:10px 0 4px">${st.answer.name}</div><div class="small muted">${st.answer.cls} · ${st.answer.lane}</div>
+            ${pic(st.answer.name, "ldl-ans")}<div class="h2" style="margin:10px 0 4px">${hm[st.answer.name]?.ru || st.answer.name}</div>${hm[st.answer.name]?.ru ? html`<div class="small muted">${st.answer.name}</div>` : ""}<div class="small muted">${st.answer.cls} · ${st.answer.lane}</div>
             <div class="row" style="margin-top:14px;justify-content:center"><button class="btn sm" data-act="share">${icon("share")}поделиться</button></div></div>`}
         <div class="ldl-head"><span>${who.replace(/а$|я$/, "")}</span><span>тип</span><span>роль</span><span>букв</span><span>буква</span></div>
         <div class="stack" style="margin-top:6px">${[...st.guesses].reverse().map((x) => html`<div class="ldl-row ${x.win ? "win" : ""}">
-          <b class="ell">${x.name}</b><span class="${x.cls_ok ? "ok" : "no"}">${x.cls}</span><span class="${x.lane_ok ? "ok" : "no"}">${x.lane}</span>
+          <b class="ell ldl-n">${pic(x.name)}${x.name}</b><span class="${x.cls_ok ? "ok" : "no"}">${x.cls}</span><span class="${x.lane_ok ? "ok" : "no"}">${x.lane}</span>
           <span class="${x.len_hint === "eq" ? "ok" : "no"}">${x.len} ${H[x.len_hint]}</span><span class="${x.letter_hint === "eq" ? "ok" : "no"}">${x.letter} ${H[x.letter_hint]}</span></div>`)}</div>
         ${!st.over ? html`<div class="center muted small mono" style="margin-top:14px">попыток осталось: ${st.max - st.guesses.length}</div>` : ""}
         <div class="sp"></div>${leraSays(`↑ — у загаданного ${who} длиннее имя или буква дальше по алфавиту. Новая загадка каждый день в полночь по мск.`)}<div class="sp"></div></div>`);
@@ -539,7 +541,7 @@ export function openLeradle(onDone, game0) {
         draw(); onDone?.();
       } catch (e) { fail(e); }
     }
-    const load = () => api(`/api/leradle?game=${game}`).then((r) => { st = r; game = r.game; draw(); }).catch(fail);
+    const load = () => api(`/api/leradle?game=${game}`).then((r) => { st = r; game = r.game; draw(); hmFor(game); }).catch(fail);
     load(); draw();
     return on(b, {
       g: (x) => { game = x.dataset.v; st = null; q = ""; haptic.sel(); draw(); load(); },

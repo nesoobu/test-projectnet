@@ -39,7 +39,8 @@ async def hero(game: str, name: str, me=Me):
     from .v10 import hero_article, lera_tiers, ru_names
     art = await hero_article(game, name)
     rn = await ru_names(game)
-    return {"name": h[0], "ru": rn.get(name), "lera_tier": (await lera_tiers(game)).get(name),
+    from .v11 import imgs
+    return {"name": h[0], "ru": rn.get(name), "img": (await imgs(game)).get(name), "lera_tier": (await lera_tiers(game)).get(name),
             "article": art, "pending_edits": await db.val("SELECT COUNT(*) FROM hero_edits WHERE game=? AND hero=? AND status='pending'", game, name)
             if me.get("is_mod") else 0,
             "cls": h[1], "lane": h[2], "lane_name": g["roles"].get(h[2]) if h[2] else None,
