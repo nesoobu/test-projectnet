@@ -820,6 +820,7 @@ export function adminUser(uid, onChange) {
           <div class="kicker" style="margin:22px 0 10px">модерация</div>
           <div class="chips">
             ${u.banned ? html`<button class="chip acc" data-act="unban">разбанить</button>` : html`<button class="chip" style="color:var(--hot)" data-act="ban">${icon("flag")}забанить</button>`}
+            <button class="chip ${u.is_mod ? "acc" : ""}" data-act="mod">${u.is_mod ? "🛡 модератор ✓" : "🛡 сделать модератором"}</button>
             ${[["photos", "удалить фото"], ["about", "стереть «о себе»"], ["nick", "сбросить ник"], ["posts", "удалить посты"]].map(([k, v]) => html`<button class="chip" data-act="wipe" data-w="${k}">${v}</button>`)}</div>
           ${d.reports.length ? html`<div class="kicker" style="margin:22px 0 6px">жалобы на игрока · ${d.reports.length}</div>
             <div class="list">${d.reports.map((r) => html`<div class="li small"><span class="grow">${r.reason}</span><span class="muted mono">${r.created_at.slice(5, 16)}</span>${r.resolved ? html`<span class="tag">✓</span>` : ""}</div>`)}</div>` : ""}
@@ -869,6 +870,7 @@ export function adminUser(uid, onChange) {
           <button class="btn hot wide" data-act="ok">забанить</button>`);
         on(sh, { ok: async () => { try { await api(`/api/admin/users/${uid}/ban`, { method: "POST", body: { reason: sh.querySelector("#br").value } }); close(); toast("Забанен"); load(); onChange?.(); } catch (e) { fail(e); } } });
       }),
+      mod: async () => { try { await api(`/api/admin/users/${uid}/mod`, { method: "POST", body: { on: !d.user.is_mod } }); toast(d.user.is_mod ? "Модератор снят" : "Назначен модератором", "ok"); load(); } catch (e) { fail(e); } },
       unban: async () => { try { await api(`/api/admin/users/${uid}/unban`, { method: "POST" }); toast("Разбанен", "ok"); load(); onChange?.(); } catch (e) { fail(e); } },
       wipe: async (x) => {
         if (!(await confirmSheet("Точно?", "Это нельзя отменить.", "да", true))) return;
@@ -985,9 +987,9 @@ function aLog(b) {
 function aContent(b) {
   const names = { users: "игроков", online: "онлайн", dau: "за сутки", matches: "мэтчей", squads_open: "отрядов открыто", posts: "постов", premium: "premium" };
   const load = async () => {
-    let s, feeds, guides, sched, disp;
+    let s, feeds, guides, sched, disp, hedits;
     try {
-      [disp, feeds, guides, sched, s] = await Promise.all([api("/api/admin/disputes"), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled"), api("/api/admin/verify")]);
+      [disp, feeds, guides, sched, s, hedits] = await Promise.all([api("/api/admin/disputes"), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled"), api("/api/admin/verify"), api("/api/admin/hero-edits")]);
     } catch (e) { return fail(e); }
     mount(b, html`<div class="pad">
       <div class="kicker" style="margin:0 0 10px">создать</div>
@@ -1004,6 +1006,12 @@ function aContent(b) {
         <div class="stack">${s.items.map((x) => html`<div class="card"><div class="row"><b class="grow">${x.user?.name}</b><span class="tag">${GI(x.game).short} · ${x.rank_name}</span></div>
           <img src="${x.image}" alt="" style="width:100%;border-radius:12px;margin:10px 0" loading="lazy">
           <div class="row" style="gap:8px"><button class="btn sm grow" data-act="vok" data-id="${x.id}">подтвердить</button><button class="btn sm dark grow" data-act="vno" data-id="${x.id}">отклонить</button></div></div>`)}</div>` : ""}
+      ${hedits.items.length ? html`<div class="kicker" style="margin:24px 0 6px">📝 правки вики · <b>${hedits.items.length}</b></div>
+        <div class="stack">${hedits.items.map((x) => html`<div class="card"><div class="row"><b class="grow">${GI(x.game).short} · ${x.data.ru_name || x.hero}</b><span class="small muted">${x.user?.name}</span></div>
+          ${x.data.note ? html`<p class="small" style="margin:6px 0 0">💬 ${x.data.note}</p>` : ""}
+          <details style="margin-top:8px"><summary class="small" style="color:var(--acc)">показать правку${x.current ? " (статья уже есть — заменит её)" : ""}</summary>
+            <div class="small" style="white-space:pre-wrap;margin-top:8px">${[["О герое", x.data.about], ["Навыки", (x.data.skills || []).map((k) => `• ${k.name}: ${k.desc}`).join("\n")], ["Сборка", x.data.build], ["Комбо", x.data.combos], ["Сильные", x.data.strong], ["Слабые", x.data.weak]].filter(([, t]) => t).map(([h, t]) => `${h}:\n${t}`).join("\n\n")}</div></details>
+          <div class="row" style="gap:8px;margin-top:10px"><button class="btn sm grow" data-act="heok" data-id="${x.id}">принять · +50</button><button class="btn sm dark grow" data-act="heno" data-id="${x.id}">отклонить</button></div></div>`)}</div>` : ""}
       <div class="kicker" style="margin:24px 0 6px">гайды на модерации · <b>${guides.guides.length}</b></div>
       ${guides.guides.length ? html`<div class="list">${guides.guides.map((x) => html`<div class="li" style="align-items:flex-start">
         <div class="grow" style="min-width:0"><b>${x.title}</b><div class="small muted">${GI(x.game).short} · ${x.author?.name}</div>
@@ -1025,6 +1033,8 @@ function aContent(b) {
   };
   load();
   return on(b, {
+    heok: async (x) => { try { await api(`/api/admin/hero-edits/${x.dataset.id}`, { method: "POST", body: { ok: true } }); toast("Принято", "ok"); load(); } catch (e) { fail(e); } },
+    heno: async (x) => { try { await api(`/api/admin/hero-edits/${x.dataset.id}`, { method: "POST", body: { ok: false } }); load(); } catch (e) { fail(e); } },
     vok: async (x) => { try { await api(`/api/admin/verify/${x.dataset.id}`, { method: "POST", body: { ok: true } }); load(); } catch (e) { fail(e); } },
     vno: async (x) => { try { await api(`/api/admin/verify/${x.dataset.id}`, { method: "POST", body: { ok: false } }); load(); } catch (e) { fail(e); } },
     dispute: (x) => openTournament(+x.dataset.id, load),

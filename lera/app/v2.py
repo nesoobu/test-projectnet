@@ -411,8 +411,10 @@ async def wiki(game: str, me=Me):
             for h in jl(r["heroes"]):
                 pop[h] = pop.get(h, 0) + 1
         tiers = await tier_map(game)
-        heroes = [{"name": n, "cls": c, "lane": l, "lane_name": g["roles"].get(l) if l else None, "mains": pop.get(n, 0),
-                   **tiers.get(n, {"tier": None, "score": None, "votes": 0})} for n, c, l in g["heroes"]]
+        from .v10 import lera_tiers, ru_names
+        lt, rn = await lera_tiers(game), await ru_names(game)
+        heroes = [{"name": n, "ru": rn.get(n), "cls": c, "lane": l, "lane_name": g["roles"].get(l) if l else None, "mains": pop.get(n, 0),
+                   "lera_tier": lt.get(n), **tiers.get(n, {"tier": None, "score": None, "votes": 0})} for n, c, l in g["heroes"]]
     roles = [{"key": k, "name": v, "desc": info.get("roles", {}).get(k, ""),
               "players": await db.val("SELECT COUNT(*) FROM user_games WHERE game=? AND roles LIKE ?", game, f'%"{k}"%')}
              for k, v in g["roles"].items()]

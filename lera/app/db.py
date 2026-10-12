@@ -276,6 +276,12 @@ CREATE TABLE IF NOT EXISTS rank_verify (
 );
 CREATE TABLE IF NOT EXISTS hero_counters (game TEXT NOT NULL, hero TEXT NOT NULL, counter TEXT NOT NULL, tg_id INTEGER NOT NULL,
     PRIMARY KEY (game, hero, counter, tg_id));
+CREATE TABLE IF NOT EXISTS lera_tier (game TEXT NOT NULL, hero TEXT NOT NULL, tier INTEGER NOT NULL, updated_by INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (game, hero));
+CREATE TABLE IF NOT EXISTS hero_info (game TEXT NOT NULL, hero TEXT NOT NULL, data TEXT NOT NULL, updated_by INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (game, hero));
+CREATE TABLE IF NOT EXISTS hero_edits (id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT NOT NULL, hero TEXT NOT NULL,
+    tg_id INTEGER NOT NULL, data TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL DEFAULT (datetime('now')));
 CREATE TABLE IF NOT EXISTS t_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT, tid INTEGER NOT NULL, sender INTEGER NOT NULL, text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -321,6 +327,7 @@ COLUMNS = [
     ("squads", "reminded", "INTEGER NOT NULL DEFAULT 0"),
     ("squads", "rate_prompted", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "mentor", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "is_mod", "INTEGER NOT NULL DEFAULT 0"),
     ("guides", "cat", "TEXT NOT NULL DEFAULT 'other'"),
 ]
 

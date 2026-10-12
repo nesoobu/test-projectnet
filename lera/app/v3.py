@@ -464,7 +464,8 @@ async def admin_user(uid: int, me=Me):
         "days_active": await db.val("SELECT COUNT(*) FROM daily_active WHERE tg_id=?", uid),
     }
     return {"card": card, "user": {k: u[k] for k in ("tg_id", "username", "first_name", "balance", "tickets", "xp", "streak",
-                                                     "premium_until", "created_at", "last_seen", "banned", "ban_reason", "referrer")},
+                                                     "premium_until", "created_at", "last_seen", "banned", "ban_reason", "referrer",
+                                                     "is_mod")},
             "reports": reports, "transactions": tx, "payments": pays, "stats": stats}
 
 

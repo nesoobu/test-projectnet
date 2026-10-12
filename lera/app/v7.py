@@ -36,13 +36,20 @@ async def hero(game: str, name: str, me=Me):
     mp = await people(mains_ids, game)
     mains = sorted([mp[i] for i in mains_ids if i in mp], key=lambda p: not p.get("online"))
     info = W.WIKI.get(game, {})
-    return {"name": h[0], "cls": h[1], "lane": h[2], "lane_name": g["roles"].get(h[2]) if h[2] else None,
+    from .v10 import hero_article, lera_tiers, ru_names
+    art = await hero_article(game, name)
+    rn = await ru_names(game)
+    return {"name": h[0], "ru": rn.get(name), "lera_tier": (await lera_tiers(game)).get(name),
+            "article": art, "pending_edits": await db.val("SELECT COUNT(*) FROM hero_edits WHERE game=? AND hero=? AND status='pending'", game, name)
+            if me.get("is_mod") else 0,
+            "cls": h[1], "lane": h[2], "lane_name": g["roles"].get(h[2]) if h[2] else None,
             "role_desc": info.get("roles", {}).get(h[2], "") if h[2] else "", **t, "dist": dist,
             "my_tier": await db.val("SELECT tier FROM wiki_tier WHERE game=? AND hero=? AND tg_id=?", game, name, uid),
             "tips": [{**x, "author": ppl.get(x["author"]), "liked": bool(x["liked"]), "mine": x["author"] == uid} for x in tips],
             "guides": await guide_rows(uid, "g.game=? AND g.hero=?", game, name),
             "mains": mains, "mains_total": await db.val("SELECT COUNT(*) FROM user_games WHERE game=? AND heroes LIKE ?", game, f'%"{name}"%'),
-            "similar": [x[0] for x in g["heroes"] if x[1] == h[1] and x[0] != name][:10]}
+            "similar": [x[0] for x in g["heroes"] if x[1] == h[1] and x[0] != name][:10],
+            "similar_ru": {x[0]: rn.get(x[0]) for x in g["heroes"] if x[1] == h[1] and x[0] != name}}
 
 
 class TierIn(BaseModel):

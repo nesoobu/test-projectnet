@@ -102,11 +102,15 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 // ─── screens (стек поверх вкладок) + BackButton ───
 const stack = [];
+const sheets = [];   // открытые шторки: «назад» сначала закрывает верхнюю
 function syncBack() {
   if (!tg?.BackButton) return;
-  stack.length ? tg.BackButton.show() : tg.BackButton.hide();
+  stack.length || sheets.length ? tg.BackButton.show() : tg.BackButton.hide();
 }
-tg?.BackButton?.onClick(() => popScreen());
+tg?.BackButton?.onClick(() => {
+  if (sheets.length) return sheets[sheets.length - 1]();
+  popScreen();
+});
 
 export function pushScreen(render, { flex = false } = {}) {
   const el = document.createElement("div");
@@ -143,9 +147,14 @@ export function sheet(render) {
   let closed = false;
   const close = () => {
     if (closed) return; closed = true;
+    const i = sheets.indexOf(close);
+    if (i >= 0) sheets.splice(i, 1);
+    syncBack();
     wrap.classList.add("out");
     setTimeout(() => wrap.remove(), 200);
   };
+  sheets.push(close);
+  syncBack();
   wrap.addEventListener("click", (e) => { if (e.target === wrap) close(); });
   render(sh, close);
   return close;

@@ -289,6 +289,7 @@ async def current_user(request: Request) -> dict:
                      "photo_url=COALESCE(?, photo_url) WHERE tg_id=?",
                      tg.get("username"), tg.get("first_name"), tg.get("photo_url"), uid)
     u["is_admin"] = uid in config.ADMIN_IDS
+    u["is_mod"] = u["is_admin"] or bool(u.get("is_mod"))
     if u.get("banned") and not u["is_admin"]:
         raise HTTPException(403, "Аккаунт заблокирован" + (f": {u['ban_reason']}" if u.get("ban_reason") else ""))
     return u
@@ -327,7 +328,7 @@ async def bootstrap(me=Me):
             "checked_today": me["last_checkin"] == today(),
             "level": level_of(me["xp"]), "pity": me["pity"],
             "premium_until": me["premium_until"] if is_premium(me) else None,
-            "is_admin": me["is_admin"], "duet_visible": bool(prof.get("duet_visible", 1)),
+            "is_admin": me["is_admin"], "is_mod": me["is_mod"], "duet_visible": bool(prof.get("duet_visible", 1)),
             "profile_done": bool(prof.get("nickname") and person["games"]),
             "mute_ready": bool(me.get("mute_ready")), "mentor": bool(me.get("mentor")),
         },
@@ -1256,6 +1257,10 @@ app.include_router(v8.router)
 from . import v9  # noqa: E402
 
 app.include_router(v9.router)
+
+from . import v10  # noqa: E402
+
+app.include_router(v10.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────
