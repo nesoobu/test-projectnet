@@ -79,6 +79,7 @@ export function render(root) {
         <button class="tile wide gold" data-act="premium">${icon("crown")}<div class="grow"><b>${m.premium ? "Premium активен" : "Lera Premium"}</b><div class="sub">${m.premium ? `до ${new Date(m.premium_until.replace(" ", "T") + "Z").toLocaleDateString("ru")}` : "суперлайки, отмена свайпа, ×2 ежедневка"}</div></div></button>
         <button class="tile" data-act="invite">${icon("gift")}<div><b>Позвать друга</b><div class="sub">+150 несо за каждого</div></div></button>
         <button class="tile" data-act="help">${icon("help")}<div><b>Помощь</b><div class="sub">как всё устроено</div></div></button>
+        <button class="tile wide acc2" data-act="story">${icon("share")}<div class="grow"><b>Карточка для сторис</b><div class="sub">ранг, мейны, репутация — выложи в Telegram и зови тиммейтов</div></div></button>
         <button class="tile wide" data-act="mentor">${icon("star")}<div class="grow"><b>Я наставник</b><div class="sub">готов помогать новичкам — значок в анкете и фильтр «наставники»</div></div><i class="sw ${m.mentor ? "on" : ""}"></i></button>
         <button class="tile wide" data-act="mute">${icon("fire")}<div class="grow"><b>Кличи «Готов играть»</b><div class="sub">уведомления, когда тиммейты ищут пати</div></div><i class="sw ${m.mute_ready ? "" : "on"}"></i></button>
         ${m.is_admin ? html`<button class="tile wide" data-act="admin">${icon("eye")}<div class="grow"><b>Админка</b><div class="sub">турниры, опросы, автопостинг, модерация</div></div></button>` : ""}
@@ -111,6 +112,7 @@ export function render(root) {
         catch (e) { fail(e); }
       } });
     }),
+    story: async () => { try { (await import("./story.js")).openStoryCard(); } catch (e) { fail(e); } },
     mentor: async () => {
       try { await api("/api/settings", { method: "POST", body: { mentor: !S.me.mentor } }); await refreshMe(); haptic.sel(); toast(S.me.mentor ? "Ты наставник — новички увидят значок" : "Значок наставника снят", "ok"); } catch (e) { fail(e); }
     },

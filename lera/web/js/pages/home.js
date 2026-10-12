@@ -15,7 +15,7 @@ export function render(root) {
 
   mount(root, html`<div class="top"><div style="min-width:0"><div class="kicker">// ${greet()}</div>
       <h1 class="h1 ell" style="margin-top:6px">${S.me.name.toLowerCase()}<i>.</i></h1></div>
-      <div class="row" style="gap:8px;flex:none"><button class="ibtn" data-act="inbox" id="bell">${icon("bell")}</button>${gameSwitch()}</div></div>
+      <div class="row" style="gap:8px;flex:none"><button class="ibtn" data-act="search">${icon("search")}</button><button class="ibtn" data-act="inbox" id="bell">${icon("bell")}</button>${gameSwitch()}</div></div>
     <div id="hb"><div class="pad"><div class="skel" style="height:180px"></div></div></div>`);
   const box = root.querySelector("#hb");
 
@@ -156,6 +156,7 @@ export function render(root) {
     rate: async () => (await lazy("openRate"))(),
     ai: async () => (await import("./ai.js")).openAI(),
     inbox: async () => (await import("./friends.js")).openInbox(),
+    search: async () => (await import("./search.js")).openSearch(),
     "mm-join": () => mmSheet(load),
     "mm-leave": async () => { try { await api("/api/mm", { method: "DELETE" }); haptic.sel(); load(); } catch (e) { fail(e); } },
   });

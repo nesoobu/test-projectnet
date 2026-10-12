@@ -350,9 +350,15 @@ async def backup():
     target = BACKUP_DIR / f"lera-{now.date().isoformat()}.db"
     if target.exists():
         return
-    import aiosqlite
-    async with aiosqlite.connect(target) as dst:
-        await db._conn.backup(dst)
+    # отдельное синхронное соединение в потоке: в WAL чтение не блокирует запись, рабочее соединение не трогаем
+    def copy():
+        import sqlite3
+        src, dst = sqlite3.connect(config.DB_PATH, timeout=30), sqlite3.connect(target)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close(); src.close()
+    await asyncio.to_thread(copy)
     for old in sorted(BACKUP_DIR.glob("lera-*.db"))[:-7]:
         old.unlink(missing_ok=True)
     log.info("backup → %s", target)

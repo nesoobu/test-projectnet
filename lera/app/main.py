@@ -39,6 +39,8 @@ async def lifespan(_app):
     task9 = asyncio.create_task(v9_loop())
     from .v11 import startup as v11_startup
     task11 = asyncio.create_task(v11_startup())
+    from .v12 import loop as v12_loop
+    task12 = asyncio.create_task(v12_loop())
     yield
     task.cancel()
     task5.cancel()
@@ -46,6 +48,7 @@ async def lifespan(_app):
     task8.cancel()
     task9.cancel()
     task11.cancel()
+    task12.cancel()
     await db.close()
 
 
@@ -1268,6 +1271,10 @@ app.include_router(v10.router)
 from . import v11  # noqa: E402
 
 app.include_router(v11.router)
+
+from . import v12  # noqa: E402
+
+app.include_router(v12.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────

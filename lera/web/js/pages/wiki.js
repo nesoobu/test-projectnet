@@ -41,11 +41,19 @@ export function openWiki(game0) {
   pushScreen((el, pop) => {
     const mine = (S.me.games || []).map((x) => x.game);
     const order = [...new Set([...mine, ...Object.keys(S.dict.games)])];
+    const draftSt = { en: [null, null, null, null, null], al: [null, null, null, null], res: null };
+    async function runDraft() {
+      const en = draftSt.en.filter(Boolean), al = draftSt.al.filter(Boolean);
+      if (!en.length && !al.length) { draftSt.res = null; return body(); }
+      try { draftSt.res = await api(`/api/wiki/draft?game=${game}&enemies=${encodeURIComponent(en.join("|"))}&allies=${encodeURIComponent(al.join("|"))}`); } catch (e) { fail(e); }
+      body();
+    }
     let game = game0 || S.game, tab = "home", data = null, q = "", cls = "", sort = "az", cat = "", tsrc = null;
 
     const tabs = () => {
       const ent = data?.entity || "Герои";
-      return [["home", "Обзор"], ...(data?.heroes ? [["heroes", ent], ["tier", "Тир-лист"]] : []), ["guides", `Гайды${data ? ` · ${data.guides.length}` : ""}`], ["dict", "Словарь"]];
+      const isMap = data?.entity === "Карты";
+      return [["home", "Обзор"], ...(data?.heroes ? [["heroes", ent], ["tier", "Тир-лист"]] : []), ...(data?.heroes && !isMap ? [["draft", "Драфт"]] : []), ["guides", `Гайды${data ? ` · ${data.guides.length}` : ""}`], ["dict", "Словарь"]];
     };
 
     function shell() {
@@ -137,6 +145,34 @@ export function openWiki(game0) {
           ${gs.length ? html`<div class="stack" style="margin-top:10px">${gs.map((x) => guideCard(x))}</div>`
             : html`<div class="empty">${leraSays(`Гайдов${cat ? " в этой категории" : ""} по ${GI(game).short} ещё нет. Напиши первый — за опубликованный дам 100 несо.`)}</div>`}<div class="sp"></div></div>`);
       }
+      if (tab === "draft") {
+        const byName = Object.fromEntries(data.heroes.map((h) => [h.name, h]));
+        const slot = (side, i) => {
+          const n = draftSt[side][i], h = byName[n];
+          return html`<button class="dslot ${h ? "filled" : ""}" data-act="dpick" data-s="${side}" data-i="${i}" style="--hc:${h ? clsColor(h.cls) : "var(--line)"}">
+            ${h ? html`<span class="hg">${face(dname(h), h.img)}</span><span class="ell">${dname(h)}</span>` : html`${icon("plus")}`}</button>`;
+        };
+        const r = draftSt.res;
+        mount(b, html`<div class="pad">
+          <p class="small muted" style="margin:0 0 14px">Выбери героев соперника (и своих, если уже взяли) — подскажу пик по контрпикам игроков Леры и тир-листу.</p>
+          <div class="kicker" style="margin-bottom:8px;color:var(--hot)">соперники</div>
+          <div class="dslots">${[0, 1, 2, 3, 4].map((i) => slot("en", i))}</div>
+          <div class="kicker" style="margin:16px 0 8px;color:var(--acc)">моя команда</div>
+          <div class="dslots">${[0, 1, 2, 3].map((i) => slot("al", i))}</div>
+          ${draftSt.en.some(Boolean) || draftSt.al.some(Boolean) ? html`<button class="btn ghost sm" style="margin-top:10px" data-act="dclear">${icon("x")}очистить</button>` : ""}
+          ${r ? html`<div class="kicker" style="margin:22px 0 10px">советую взять</div>
+            <div class="stack">${r.picks.slice(0, 8).map((p, i) => html`<button class="dpick-row" data-act="hero" data-v="${p.name}" style="--hc:${clsColor(p.cls)}">
+              <span class="mono rank">${i + 1}</span><span class="hg">${face(p.ru || p.name, p.img)}</span>
+              <div class="grow" style="min-width:0"><b class="ell" style="display:block">${p.ru || p.name}${p.tier ? html` <span class="tier" style="--tc:${TIER_C[p.tier]}">${p.tier}</span>` : ""}</b>
+                <span class="small muted ell" style="display:block">${p.why.join(" · ") || "нейтральный пик"}</span></div>
+              <b class="mono" style="color:${p.score > 0 ? "var(--acc)" : "var(--mute)"}">${p.score > 0 ? "+" : ""}${p.score}</b></button>`)}</div>
+            ${r.avoid.length ? html`<div class="kicker" style="margin:22px 0 10px;color:var(--hot)">лучше не брать</div>
+              <div class="chips">${r.avoid.map((p) => html`<button class="chip" data-act="hero" data-v="${p.name}">${p.ru || p.name}</button>`)}</div>` : ""}
+            ${!r.counter_votes ? html`<div style="margin-top:16px">${leraSays("Контрпиков по этим героям пока мало — совет собран по тир-листу и ролям. Отмечай контрпики на страницах героев, и я стану умнее.")}</div>` : ""}`
+          : html`<div class="empty" style="padding-top:26px">${leraSays("Тапни по слоту и выбери героя.")}</div>`}
+          <div class="sp"></div></div>`);
+        return;
+      }
       if (tab === "dict") {
         return mount(b, html`<div class="pad"><div class="gloss">${data.glossary.map(([t, d]) => html`<div class="term"><b>${t}</b><p>${d}</p></div>`)}</div>
           <div class="sp"></div>${leraSays("Не нашёл слово? Спроси меня на главной — «Спроси Леру» объяснит.")}<div class="sp"></div></div>`);
@@ -163,6 +199,22 @@ export function openWiki(game0) {
       write: () => guideEditor(game, null, () => load(true)),
       quick: (x) => quickRate(game, data, () => load(true), x.dataset.v === "lera"),
       edits: () => openEdits(() => load(true)),
+      dclear: () => { draftSt.en.fill(null); draftSt.al.fill(null); draftSt.res = null; haptic.sel(); body(); },
+      dpick: (x) => {
+        const side = x.dataset.s, i = +x.dataset.i;
+        if (draftSt[side][i]) { draftSt[side][i] = null; haptic.sel(); return runDraft(); }
+        const used = new Set([...draftSt.en, ...draftSt.al].filter(Boolean));
+        let q = "";
+        sheet((sh, close) => {
+          mount(sh, html`<h2 class="h2" style="margin-bottom:12px">${side === "en" ? "герой соперника" : "герой твоей команды"}</h2>
+            <input class="input" id="dq" placeholder="Поиск…" autocomplete="off"><div id="dl" class="dgrid" style="margin-top:12px"></div>`);
+          const d2 = () => mount(sh.querySelector("#dl"), data.heroes.filter((h) => !used.has(h.name) && (!q || h.name.toLowerCase().includes(q) || (h.ru || "").toLowerCase().includes(q)))
+            .map((h) => html`<button class="dg" data-act="dp" data-v="${h.name}" style="--hc:${clsColor(h.cls)}"><span class="hg">${face(dname(h), h.img)}</span><span class="ell">${dname(h)}</span></button>`));
+          d2();
+          sh.querySelector("#dq").addEventListener("input", (e) => { q = e.target.value.trim().toLowerCase(); d2(); });
+          on(sh, { dp: (y) => { draftSt[side][i] = y.dataset.v; haptic.sel(); close(); runDraft(); } });
+        });
+      },
       tsrc: (x) => { tsrc = x.dataset.v; haptic.sel(); body(); },
       leradle: async () => (await import("./more.js")).openLeradle(null, game),
     });
