@@ -987,7 +987,7 @@ function aContent(b) {
   const load = async () => {
     let s, feeds, guides, sched, disp;
     try {
-      [disp, feeds, guides, sched] = await Promise.all([api("/api/admin/disputes"), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled")]);
+      [disp, feeds, guides, sched, s] = await Promise.all([api("/api/admin/disputes"), api("/api/admin/feeds"), api("/api/admin/guides"), api("/api/admin/scheduled"), api("/api/admin/verify")]);
     } catch (e) { return fail(e); }
     mount(b, html`<div class="pad">
       <div class="kicker" style="margin:0 0 10px">создать</div>
@@ -1000,6 +1000,10 @@ function aContent(b) {
       ${disp.disputes.length ? html`<div class="kicker" style="margin:24px 0 6px;color:var(--hot)">⚖️ споры в турнирах · <b>${disp.disputes.length}</b></div>
         <div class="list">${disp.disputes.map((x) => html`<button class="li" style="width:100%;text-align:left" data-act="dispute" data-id="${x.tid}">
           <div class="grow" style="min-width:0"><b class="ell" style="display:block">${x.a_name} vs ${x.b_name}</b><div class="small muted ell">${GI(x.game).short} · ${x.title}${x.proof ? " · есть пруф" : ""}</div></div>${icon("send", 'width="16" height="16"')}</button>`)}</div>` : ""}
+      ${s.items.length ? html`<div class="kicker" style="margin:24px 0 6px">✓ подтверждение ранга · <b>${s.items.length}</b></div>
+        <div class="stack">${s.items.map((x) => html`<div class="card"><div class="row"><b class="grow">${x.user?.name}</b><span class="tag">${GI(x.game).short} · ${x.rank_name}</span></div>
+          <img src="${x.image}" alt="" style="width:100%;border-radius:12px;margin:10px 0" loading="lazy">
+          <div class="row" style="gap:8px"><button class="btn sm grow" data-act="vok" data-id="${x.id}">подтвердить</button><button class="btn sm dark grow" data-act="vno" data-id="${x.id}">отклонить</button></div></div>`)}</div>` : ""}
       <div class="kicker" style="margin:24px 0 6px">гайды на модерации · <b>${guides.guides.length}</b></div>
       ${guides.guides.length ? html`<div class="list">${guides.guides.map((x) => html`<div class="li" style="align-items:flex-start">
         <div class="grow" style="min-width:0"><b>${x.title}</b><div class="small muted">${GI(x.game).short} · ${x.author?.name}</div>
@@ -1021,6 +1025,8 @@ function aContent(b) {
   };
   load();
   return on(b, {
+    vok: async (x) => { try { await api(`/api/admin/verify/${x.dataset.id}`, { method: "POST", body: { ok: true } }); load(); } catch (e) { fail(e); } },
+    vno: async (x) => { try { await api(`/api/admin/verify/${x.dataset.id}`, { method: "POST", body: { ok: false } }); load(); } catch (e) { fail(e); } },
     dispute: (x) => openTournament(+x.dataset.id, load),
     tour: () => tourCreate(load),
     poll: () => sheet((el, close) => {

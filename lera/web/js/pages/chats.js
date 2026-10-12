@@ -25,7 +25,7 @@ export function render(root) {
         <button class="li" style="width:100%;text-align:left" data-act="match" data-id="${m.id}">
           ${avatar(m.with, 52, { online: true })}
           <div class="grow"><div class="row"><b class="grow ell">${nameEl(m.with)}</b><span class="small muted mono">${ago(m.at)}</span></div>
-            <div class="row" style="margin-top:4px"><span class="grow ell ${m.unread ? "" : "muted"}" style="${m.unread ? "font-weight:600" : ""}">${m.mine ? "ты: " : ""}${m.last_text}</span>
+            <div class="row" style="margin-top:4px"><span class="grow ell ${m.unread ? "" : "muted"}" style="${m.unread ? "font-weight:600" : ""}">${m.mine ? "ты: " : ""}${m.last_text.split("\u2063")[0]}</span>
             ${m.unread ? html`<i class="badge">${m.unread}</i>` : ""}</div></div>
         </button>`)}</div></div>` : ""}
       ${S.me.clan ? html`<div class="pad"><div class="kicker" style="margin:20px 0 4px">клан</div>
@@ -36,7 +36,7 @@ export function render(root) {
         <button class="li" style="width:100%;text-align:left" data-act="squad" data-id="${s.id}">
           <div class="av" style="--s:52px"><div class="in" style="background:var(--acc);color:var(--acc-ink)">${icon("squad", 'width="24" height="24"')}</div></div>
           <div class="grow"><div class="row"><b class="grow ell">${s.title}</b><span class="tag">${s.members}/${s.max_players}</span></div>
-            <div class="muted ell small" style="margin-top:4px">${s.last_text || `${GI(s.game).short} · ${modeName(s.mode, s.game)}`}</div></div>
+            <div class="muted ell small" style="margin-top:4px">${s.last_text?.split("\u2063")[0] || `${GI(s.game).short} · ${modeName(s.mode, s.game)}`}</div></div>
         </button>`)}</div></div>` : ""}
       <div class="sp"></div>`);
   }
@@ -114,16 +114,23 @@ export function chatRoom(el, { head, load, send, empty, back, key = null, ice = 
     <div class="typing-line" id="typing"></div>
     ${ice ? html`<div class="ice" id="ice"></div>` : ""}
     <div class="composer"><textarea id="ta" rows="1" placeholder="Сообщение…" maxlength="1000"></textarea>
-      <button class="ibtn send" data-act="send">${icon("send")}</button></div>`);
+      <button class="ibtn mic" data-act="rec" title="голосовое">${icon("mic")}</button>
+      <button class="ibtn send" data-act="send">${icon("send")}</button></div>
+    <div class="rec-bar" id="recbar"><i class="rec-dot"></i><span class="mono grow" id="rect">0:00</span>
+      <button class="ibtn" data-act="reccancel">${icon("x")}</button><button class="ibtn send" data-act="recsend">${icon("send")}</button></div>`);
   const box = el.querySelector("#msgs"), ta = el.querySelector("#ta");
 
+  const body = (text) => {
+    const v = /^🎤[^\u2063]*\u2063(\/uploads\/[\w.-]+)$/.exec(text || "");
+    return v ? html`<div class="voice-msg"><audio controls preload="metadata" src="${v[1]}"></audio></div>` : text;
+  };
   const bubble = (m, prev) => {
     const mine = m.sender === S.me.tg_id;
     const t = html`<time>${hhmm(m.created_at)}</time>`;
-    if (!group || mine) return html`<div class="msg ${mine ? "me" : ""}">${m.text}${t}</div>`;
+    if (!group || mine) return html`<div class="msg ${mine ? "me" : ""}">${body(m.text)}${t}</div>`;
     const cont = prev && prev.sender === m.sender;
     return html`<div class="msg-group">${cont ? html`<div style="width:30px"></div>` : avatar({ tg_id: m.sender, name: m.name, avatar: m.avatar, frame: m.frame }, 30)}
-      <div class="msg">${cont ? "" : html`<div class="who ${m.color || ""}">${m.name}</div>`}${m.text}${t}</div></div>`;
+      <div class="msg">${cont ? "" : html`<div class="who ${m.color || ""}">${m.name}</div>`}${body(m.text)}${t}</div></div>`;
   };
 
   function draw() {
@@ -156,7 +163,7 @@ export function chatRoom(el, { head, load, send, empty, back, key = null, ice = 
   async function doSend(text) {
     text = text.trim();
     if (!text) return;
-    ta.value = ""; ta.style.height = "";
+    ta.value = ""; ta.style.height = ""; comp.classList.remove("has-text");
     haptic.tap();
     try {
       await send(text);
@@ -169,7 +176,49 @@ export function chatRoom(el, { head, load, send, empty, back, key = null, ice = 
     if (key && ta.value) rt.send({ type: "typing", chat: key });
   });
   ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && matchMedia("(pointer:fine)").matches) { e.preventDefault(); doSend(ta.value); } });
-  const off = on(el, { send: () => doSend(ta.value), ice: (b) => doSend(b.textContent), back: () => back?.(), ...actions });
+  // ── голосовые: тап по микрофону — запись (до 60 с), ✕ — отмена, ➤ — отправить
+  let rec = null;
+  const comp = el.querySelector(".composer"), bar = el.querySelector("#recbar");
+  const syncMic = () => comp.classList.toggle("has-text", !!ta.value.trim());
+  ta.addEventListener("input", syncMic);
+  async function recStart() {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return toast("Запись голоса не поддерживается на этом устройстве", "err");
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { return toast("Нет доступа к микрофону", "err"); }
+    const mime = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find((m) => MediaRecorder.isTypeSupported?.(m)) || "";
+    const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    const chunks = [];
+    rec = { mr, stream, chunks, t0: Date.now(), send: false, timer: null };
+    mr.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    mr.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop());
+      clearInterval(rec.timer);
+      const r = rec; rec = null; bar.classList.remove("on"); comp.classList.remove("hidden");
+      if (!r.send) return;
+      const secs = Math.max(1, Math.round((Date.now() - r.t0) / 1000));
+      const fd = new FormData();
+      fd.append("file", new Blob(r.chunks, { type: mr.mimeType || "audio/webm" }), "voice");
+      try {
+        const { url } = await api("/api/upload/voice", { method: "POST", form: fd });
+        await send(`🎤 голосовое · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}\u2063${url}`);
+        haptic.ok(); clearTimeout(timer); await tick();
+      } catch (e) { fail(e); }
+    };
+    mr.start(250);
+    comp.classList.add("hidden"); bar.classList.add("on"); haptic.tap();
+    rec.timer = setInterval(() => {
+      const s = Math.round((Date.now() - rec.t0) / 1000);
+      el.querySelector("#rect").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      if (s >= 60) { rec.send = true; rec.mr.stop(); }
+    }, 250);
+  }
+  const off = on(el, {
+    send: () => doSend(ta.value), ice: (b) => doSend(b.textContent), back: () => back?.(), ...actions,
+    rec: () => recStart(),
+    reccancel: () => { if (rec) { rec.send = false; rec.mr.stop(); } },
+    recsend: () => { if (rec) { rec.send = true; rec.mr.stop(); } },
+  });
   tick(true);
-  return () => { alive = false; clearTimeout(timer); off(); offMsg(); offTyping(); };
+  return () => { alive = false; clearTimeout(timer); off(); offMsg(); offTyping(); if (rec) { rec.send = false; rec.mr.stop(); } };
 }

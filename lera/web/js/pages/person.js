@@ -6,6 +6,9 @@ export function cardInfo(p, { vibe = true } = {}) {
     ${p.rep || p.rep_tags?.length ? html`<div class="rep-row ${p.rep < 0 ? "neg" : ""}">${icon("thumb", 'width="16" height="16"')}
       <b>${p.rep > 0 ? "+" : ""}${p.rep}</b><span class="muted small">репутация</span>
       ${(p.rep_tags || []).map((t) => html`<span class="chip acc" style="height:26px;font-size:12px">${S.dict.review_tags[t]}</span>`)}</div>` : ""}
+    ${p.reliability != null || p.mentor ? html`<div class="chips" style="margin-bottom:8px">
+      ${p.reliability != null ? html`<span class="chip ${p.reliability >= 90 ? "acc" : ""}" title="доля отзывов без «не пришёл»">надёжность ${p.reliability}%</span>` : ""}
+      ${p.mentor ? html`<span class="chip acc">наставник — поможет новичку</span>` : ""}</div>` : ""}
     <div class="chips">
       ${p.voice ? html`<span class="chip">${icon("mic")}микро</span>` : ""}
       ${p.city ? html`<span class="chip">${p.city}</span>` : ""}
@@ -13,7 +16,7 @@ export function cardInfo(p, { vibe = true } = {}) {
     ${(p.games || []).length ? html`<div class="sp"></div><div class="kicker">игры</div><div class="games-list">${p.games.map((g) => html`
       <div class="gl-row" style="--gc:${GI(g.game).color}"><span class="gdot">${GI(g.game).short.slice(0, 2)}</span>
         <div class="grow" style="min-width:0"><b>${GI(g.game).name}</b>
-          <div class="small muted">${[rankName(g.rank, g.game), ...g.roles.map((r) => roleName(r, g.game))].filter(Boolean).join(" · ")}</div>
+          <div class="small muted">${g.verified ? html`<b class="vbadge" title="ранг подтверждён скрином">✓</b> ` : ""}${[rankName(g.rank, g.game), ...g.roles.map((r) => roleName(r, g.game))].filter(Boolean).join(" · ")}</div>
           ${g.heroes.length ? html`<div class="small" style="margin-top:3px">мейны: ${g.heroes.join(", ")}</div>` : ""}</div>
         ${g.uid ? html`<button class="tag" data-act="copy-uid" data-v="${g.uid}">ID ${g.uid}</button>` : ""}</div>`)}</div>` : ""}
     ${vibe && p.vibe_why?.length ? html`<div class="sp"></div><div class="kicker">почему <b>вайб ${p.vibe}</b></div>

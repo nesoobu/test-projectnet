@@ -109,6 +109,7 @@ export async function route(link) {
   else if (/^x\d+$/.test(link)) { go("home"); (await import("./pages/pro.js")).openPro(n); }
   else if (link === "pro") { go("home"); (await import("./pages/pro.js")).openTournaments(); }
   else if (/^c\d+$/.test(link)) { go("mates", "clans"); (await import("./pages/clans.js")).openClan(n); }
+  else if (link === "rate") { go("home"); (await import("./pages/more.js")).openRate(); }
   else if (link === "pass") { go("home"); (await import("./pages/more.js")).openPass(); }
   else if (link === "friends") { go("chats"); (await import("./pages/friends.js")).openFriends(); }
   else if (link === "likes") go("mates", "likes");

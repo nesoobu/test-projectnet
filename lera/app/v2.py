@@ -165,7 +165,8 @@ async def game_save(game: str, body: GameIn, me=Me):
     if pos is None:
         pos = await db.val("SELECT COUNT(*) FROM user_games WHERE tg_id=?", me["tg_id"])
     await db.run("INSERT INTO user_games (tg_id, game, rank, roles, heroes, game_uid, pos) VALUES (?,?,?,?,?,?,?) "
-                 "ON CONFLICT(tg_id, game) DO UPDATE SET rank=excluded.rank, roles=excluded.roles, "
+                 "ON CONFLICT(tg_id, game) DO UPDATE SET verified=CASE WHEN rank IS excluded.rank THEN verified ELSE 0 END, "
+                 "rank=excluded.rank, roles=excluded.roles, "
                  "heroes=excluded.heroes, game_uid=excluded.game_uid",
                  me["tg_id"], game, body.rank, json.dumps(roles), json.dumps(heroes, ensure_ascii=False),
                  (body.uid or "").strip() or None, pos)
@@ -276,12 +277,16 @@ async def ready_invite(to: int, me=Me):
 
 
 class SettingsIn(BaseModel):
-    mute_ready: bool
+    mute_ready: bool | None = None
+    mentor: bool | None = None
 
 
 @router.post("/settings")
 async def settings(body: SettingsIn, me=Me):
-    await db.run("UPDATE users SET mute_ready=? WHERE tg_id=?", int(body.mute_ready), me["tg_id"])
+    if body.mute_ready is not None:
+        await db.run("UPDATE users SET mute_ready=? WHERE tg_id=?", int(body.mute_ready), me["tg_id"])
+    if body.mentor is not None:
+        await db.run("UPDATE users SET mentor=? WHERE tg_id=?", int(body.mentor), me["tg_id"])
     return {"ok": True}
 
 

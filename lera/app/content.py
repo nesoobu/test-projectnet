@@ -203,8 +203,8 @@ ACHIEVEMENTS = [
 ]
 
 REVIEW_TAGS = {"chill": "Не токсик", "carry": "Тащер", "mic": "С микро", "brain": "Тактик", "fun": "Весело",
-               "toxic": "Токсичный", "afk": "Ливает", "noob": "Слабо играет"}
-NEGATIVE_TAGS = {"toxic", "afk", "noob"}
+               "toxic": "Токсичный", "afk": "Ливает", "noob": "Слабо играет", "noshow": "Не пришёл"}
+NEGATIVE_TAGS = {"toxic", "afk", "noob", "noshow"}
 
 QUESTS["leradle"] = ("Разгадай Лерадл", 1, 30)
 QUESTS["ready"] = ("Нажми «Готов играть»", 1, 15)

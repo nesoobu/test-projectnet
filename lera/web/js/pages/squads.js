@@ -36,6 +36,12 @@ export function render(root) {
   return off;
 }
 
+const startLabel = (s) => {
+  const d = new Date(s.start_at.replace(" ", "T") + "Z"), now = new Date();
+  const day = d.toDateString() === now.toDateString() ? "сегодня" : d.toDateString() === new Date(Date.now() + 864e5).toDateString() ? "завтра" : d.toLocaleDateString("ru", { day: "numeric", month: "short" });
+  return `${day} в ${d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}`;
+};
+
 function squadCard(s) {
   const free = s.max_players - s.count;
   return html`<button class="sq" style="width:100%;text-align:left" data-act="open" data-id="${s.id}">
@@ -44,7 +50,8 @@ function squadCard(s) {
       <div class="row"><b class="h3 grow">${s.title}</b>${s.game !== S.game ? gameBadge(s.game) : ""}${s.voice ? html`<span class="tag">${icon("mic", 'width="11" height="11"')}</span>` : ""}</div>
       <div class="row wrap small muted" style="margin-top:6px;gap:8px">
         ${rankName(s.rank, s.game) ? html`<span>${rankName(s.rank, s.game)}+</span>` : html`<span>любой ранг</span>`}
-        <span>·</span><span class="mono">${icon("clock", 'width="12" height="12" style="vertical-align:-2px"')} ${left(s.expires_at)}</span>
+        <span>·</span>${s.start_at ? html`<span class="tag acc">📅 сбор ${startLabel(s)}</span>`
+          : html`<span class="mono">${icon("clock", 'width="12" height="12" style="vertical-align:-2px"')} ${left(s.expires_at)}</span>`}
       </div>
       ${s.roles_needed.length ? html`<div class="chips" style="margin-top:10px">${s.roles_needed.map((r) => html`<span class="chip" style="height:26px;font-size:12px">ищем: ${roleName(r, s.game)}</span>`)}</div>` : ""}
       <div class="slots">${s.members.map((m) => avatar(m, 34))}${Array.from({ length: free }, () => html`<span class="slot-empty">${icon("plus")}</span>`)}
@@ -55,7 +62,7 @@ function squadCard(s) {
 function createSheet(done) {
   const d = GI();
   const mg = S.me.games.find((x) => x.game === S.game);
-  const g = { title: "", game: S.game, mode: Object.keys(d.modes)[0], rank: mg?.rank ?? null, roles_needed: [], max_players: 5, voice: false, hours: 2 };
+  const g = { title: "", game: S.game, mode: Object.keys(d.modes)[0], rank: mg?.rank ?? null, roles_needed: [], max_players: 5, voice: false, hours: 2, when: "now", start_at: null };
   sheet((el, close) => {
     const draw = () => {
       const t = el.querySelector("#t")?.value; if (t !== undefined) g.title = t;
@@ -67,7 +74,11 @@ function createSheet(done) {
         ${d.ranks.map((r, i) => html`<button class="chip ${g.rank === i ? "on" : ""}" data-act="r" data-v="${i}">${r}</button>`)}</div></div>
       <div class="field"><span class="lbl">кого ищем</span><div class="chips">${Object.entries(d.roles).map(([k, v]) => html`<button class="chip ${g.roles_needed.includes(k) ? "on" : ""}" data-act="role" data-v="${k}">${v}</button>`)}</div></div>
       <div class="field"><span class="lbl">размер пати</span><div class="seg">${[2, 3, 4, 5].map((n) => html`<button class="${g.max_players === n ? "on" : ""}" data-act="n" data-v="${n}">${n}</button>`)}</div></div>
-      <div class="field"><span class="lbl">живёт</span><div class="seg">${[1, 2, 4, 8].map((n) => html`<button class="${g.hours === n ? "on" : ""}" data-act="h" data-v="${n}">${n} ч</button>`)}</div></div>
+      <div class="field"><span class="lbl">когда играем</span><div class="seg">
+        <button class="${g.when === "now" ? "on" : ""}" data-act="when" data-v="now">сейчас</button>
+        <button class="${g.when === "later" ? "on" : ""}" data-act="when" data-v="later">📅 на время</button></div></div>
+      ${g.when === "now" ? html`<div class="field"><span class="lbl">живёт</span><div class="seg">${[1, 2, 4, 8].map((n) => html`<button class="${g.hours === n ? "on" : ""}" data-act="h" data-v="${n}">${n} ч</button>`)}</div></div>`
+        : html`<div class="field"><label>сбор (мск) — напомню всем за 15 минут</label><input class="input" id="st" type="datetime-local" value="${g.start_at || ""}"></div>`}
       <div class="field"><button class="toggle" data-act="voice"><span>${icon("mic", 'width="18" height="18" style="vertical-align:-3px"')} Играем с голосом</span><i class="sw ${g.voice ? "on" : ""}"></i></button></div>
       <button class="btn wide" data-act="go">${icon("squad")}создать</button>`);
     };
@@ -78,11 +89,19 @@ function createSheet(done) {
       role: (b) => { const v = b.dataset.v; g.roles_needed = g.roles_needed.includes(v) ? g.roles_needed.filter((x) => x !== v) : [...g.roles_needed, v]; haptic.sel(); draw(); },
       n: (b) => { g.max_players = +b.dataset.v; haptic.sel(); draw(); },
       h: (b) => { g.hours = +b.dataset.v; haptic.sel(); draw(); },
+      when: (b) => {
+        g.when = b.dataset.v;
+        if (g.when === "later" && !g.start_at) { const d = new Date(Date.now() + 3 * 36e5); d.setMinutes(0, 0, 0); g.start_at = new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); }
+        haptic.sel(); draw();
+      },
       voice: () => { g.voice = !g.voice; haptic.sel(); draw(); },
       go: async () => {
         g.title = el.querySelector("#t").value.trim();
         if (g.title.length < 2) return toast("Придумай название", "err");
-        try { const s = await api("/api/squads", { method: "POST", body: g }); haptic.ok(); close(); done(s); } catch (e) { fail(e); }
+        if (g.when === "later") g.start_at = el.querySelector("#st")?.value || g.start_at;
+        const body = { ...g, start_at: g.when === "later" ? g.start_at : null };
+        delete body.when;
+        try { const s = await api("/api/squads", { method: "POST", body }); haptic.ok(); close(); done(s); } catch (e) { fail(e); }
       },
     });
   });
@@ -107,7 +126,7 @@ export function openSquad(id, onChange) {
           <h1 class="h1" style="text-transform:none;font-size:28px;margin:10px 0 12px">${s.title}</h1>
           <div class="chips">${rankName(s.rank, s.game) ? html`<span class="chip on">${rankName(s.rank, s.game)}+</span>` : ""}
             ${s.voice ? html`<span class="chip">${icon("mic")}с голосом</span>` : ""}
-            <span class="chip">${icon("clock")}${left(s.expires_at)}</span></div>
+            ${s.start_at ? html`<span class="chip acc">📅 сбор ${startLabel(s)}</span>` : html`<span class="chip">${icon("clock")}${left(s.expires_at)}</span>`}</div>
           ${s.roles_needed.length ? html`<div class="kicker" style="margin:20px 0 8px">ищут</div><div class="chips">${s.roles_needed.map((r) => html`<span class="chip acc">${roleName(r, s.game)}</span>`)}</div>` : ""}
           <div class="kicker" style="margin:22px 0 4px">состав · ${s.count}/${s.max_players}</div>
           <div class="list">${s.members.map((m) => html`<button class="li" style="width:100%;text-align:left" data-act="who" data-id="${m.tg_id}">${avatar(m, 44, { online: true })}

@@ -189,7 +189,10 @@ export function openHero(game, name, onChange) {
   pushScreen((el, pop) => {
     let h = null, changed = false;
     const load = async () => {
-      try { h = await api(`/api/wiki/hero?game=${game}&name=${encodeURIComponent(name)}`); } catch (e) { fail(e); return pop(); }
+      try {
+        h = await api(`/api/wiki/hero?game=${game}&name=${encodeURIComponent(name)}`);
+        h.ctr = h.cls === "Карта" ? null : await api(`/api/wiki/counters?game=${game}&hero=${encodeURIComponent(name)}`).catch(() => null);
+      } catch (e) { fail(e); return pop(); }
       draw();
     };
     function draw() {
@@ -216,6 +219,12 @@ export function openHero(game, name, onChange) {
           ${h.mains.length ? html`<div class="wsec"><div class="kicker">${isMap ? "любят эту карту" : "мейнят в Лере"}</div>
             <div class="mains">${h.mains.map((p) => html`<button data-act="who" data-id="${p.tg_id}">${avatar(p, 52, { online: true })}<span class="ell">${p.name}</span></button>`)}</div>
             <p class="small muted" style="margin:8px 0 0">Тапни — откроется анкета, можно позвать в катку.</p></div>` : ""}
+
+          ${h.ctr ? html`<div class="wsec"><div class="row"><div class="kicker grow">контрпики · голосуют игроки</div><button class="tag" data-act="ctradd" data-k="by">+ кто контрит</button></div>
+            <div class="ctr-grid">
+              <div><div class="small muted" style="margin-bottom:8px">его контрят</div>${h.ctr.countered_by.length ? h.ctr.countered_by.map((c) => html`<button class="ctr ${c.mine ? "mine" : ""}" data-act="ctrvote" data-k="by" data-v="${c.name}" style="--hc:${clsColor((h.allcls || {})[c.name])}"><i>${glyph(c.name)}</i><span class="ell grow">${c.name}</span><b class="mono">${c.n}</b></button>`) : html`<p class="small muted">пока никто не отметил</p>`}</div>
+              <div><div class="small muted" style="margin-bottom:8px">он контрит</div>${h.ctr.counters.length ? h.ctr.counters.map((c) => html`<button class="ctr ${c.mine ? "mine" : ""}" data-act="ctrvote" data-k="of" data-v="${c.name}"><i>${glyph(c.name)}</i><span class="ell grow">${c.name}</span><b class="mono">${c.n}</b></button>`) : html`<button class="tag" data-act="ctradd" data-k="of">+ кого он контрит</button>`}</div>
+            </div><p class="small muted" style="margin:8px 0 0">Тап по герою — голос «согласен» (ещё тап — убрать).</p></div>` : ""}
 
           <div class="wsec"><div class="kicker">советы игроков · ${h.tips.length}</div>
             <div class="tip-new"><textarea class="input" id="tip" rows="2" maxlength="280" placeholder="${isMap ? "Позиция, раскидка, фишка карты…" : "Билд, контрпик, комбо, фишка…"}"></textarea>
@@ -254,6 +263,25 @@ export function openHero(game, name, onChange) {
       guide: (b) => openGuide(+b.dataset.id, load),
       write: () => guideEditor(game, h.name, () => { changed = true; load(); }),
       sim: (b) => openHero(game, b.dataset.v, onChange),
+      ctrvote: async (b) => {
+        const body = b.dataset.k === "by" ? { game, hero: h.name, counter: b.dataset.v } : { game, hero: b.dataset.v, counter: h.name };
+        try { await api("/api/wiki/counters", { method: "POST", body }); haptic.sel(); load(); } catch (e) { fail(e); }
+      },
+      ctradd: async (b) => {
+        const d = await wikiData(game), kind = b.dataset.k;
+        let q = "";
+        sheet((sh, close) => {
+          const d2 = () => mount(sh.querySelector("#cl"), html`<div class="chips">${d.heroes.filter((x) => x.name !== h.name && (!q || x.name.toLowerCase().includes(q))).map((x) => html`<button class="chip" data-act="pick" data-v="${x.name}">${x.name}</button>`)}</div>`);
+          mount(sh, html`<h2 class="h2" style="margin-bottom:12px">${kind === "by" ? `кто контрит ${h.name}` : `кого контрит ${h.name}`}</h2>
+            <input class="input" id="cq" placeholder="Поиск…" autocomplete="off"><div id="cl" style="margin-top:12px"></div>`);
+          d2();
+          sh.querySelector("#cq").addEventListener("input", (e) => { q = e.target.value.trim().toLowerCase(); d2(); });
+          on(sh, { pick: async (x) => {
+            const body = kind === "by" ? { game, hero: h.name, counter: x.dataset.v } : { game, hero: x.dataset.v, counter: h.name };
+            try { await api("/api/wiki/counters", { method: "POST", body }); haptic.ok(); close(); load(); } catch (e) { fail(e); }
+          } });
+        });
+      },
     });
     return () => { off(); if (changed) onChange?.(); };
   });

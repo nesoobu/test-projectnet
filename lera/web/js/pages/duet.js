@@ -4,7 +4,7 @@ import { openPremium } from "./more.js";
 
 // фильтры храним отдельно для каждой игры: у игр разные ранги и роли
 const fkey = () => "lera_filters_" + S.game;
-const defF = () => ({ gender: "", age_min: 14, age_max: 80, rank_min: 0, rank_max: GI().ranks.length - 1, role: "", online: 0 });
+const defF = () => ({ gender: "", age_min: 14, age_max: 80, rank_min: 0, rank_max: GI().ranks.length - 1, role: "", online: 0, verified: 0, reliable: 0, mentor: 0 });
 const loadF = () => { try { return { ...defF(), ...JSON.parse(localStorage.getItem(fkey()) || "{}") }; } catch { return defF(); } };
 const saveF = (f) => { try { localStorage.setItem(fkey(), JSON.stringify(f)); } catch {} };
 const activeFilters = (f) => { const D = defF(); return Object.keys(D).filter((k) => f[k] !== D[k]).length; };
@@ -77,10 +77,12 @@ export function render(root, arg) {
           ${c.online ? html`<span class="tag on-dot">онлайн</span>` : ""}
           ${c.title ? html`<span class="tag">${c.title}</span>` : ""}
           ${c.premium ? html`<span class="tag gold">premium</span>` : ""}
+          ${c.mentor ? html`<span class="tag acc">наставник</span>` : ""}
+          ${c.reliability != null ? html`<span class="tag ${c.reliability >= 90 ? "acc" : c.reliability < 70 ? "hot" : ""}">надёжность ${c.reliability}%</span>` : ""}
         </div>
         <div class="nm">${nameEl(c)}${c.age ? html`<span class="age">${c.age}</span>` : ""}</div>
         <div class="chips" style="margin-top:12px">
-          ${rankName(c.rank, c.game) ? html`<span class="chip on">${rankName(c.rank, c.game)}</span>` : ""}
+          ${rankName(c.rank, c.game) ? html`<span class="chip on">${rankName(c.rank, c.game)}${c.verified ? html` <b class="vbadge" title="ранг подтверждён">✓</b>` : ""}</span>` : ""}
           ${c.roles.map((r) => html`<span class="chip">${roleName(r, c.game)}</span>`)}
           ${c.voice ? html`<span class="chip">${icon("mic")}</span>` : ""}
         </div>
@@ -226,6 +228,10 @@ export function render(root, arg) {
         <div class="field"><span class="lbl">роль</span><div class="chips">
           <button class="chip ${!g.role ? "on" : ""}" data-act="set" data-k="role" data-v="">Любая</button>
           ${Object.entries(d.roles).map(([k, v]) => html`<button class="chip ${g.role === k ? "on" : ""}" data-act="set" data-k="role" data-v="${k}">${v}</button>`)}</div></div>
+        <div class="field"><span class="lbl">доверие</span><div class="chips">
+          <button class="chip ${g.verified ? "on" : ""}" data-act="tog" data-k="verified">✓ ранг подтверждён</button>
+          <button class="chip ${g.reliable ? "on" : ""}" data-act="tog" data-k="reliable">надёжные (80%+)</button>
+          <button class="chip ${g.mentor ? "on" : ""}" data-act="tog" data-k="mentor">наставники</button></div></div>
         <div class="row"><button class="btn ghost" data-act="reset">сброс</button><button class="btn grow" data-act="apply">показать</button></div>`);
       let rankTap = null;
       const readAges = () => {
@@ -241,6 +247,7 @@ export function render(root, arg) {
           else { g.rank_min = Math.min(rankTap, i); g.rank_max = Math.max(rankTap, i); rankTap = null; }
           haptic.sel(); draw2();
         },
+        tog: (b) => { readAges(); g[b.dataset.k] = g[b.dataset.k] ? 0 : 1; haptic.sel(); draw2(); },
         reset: () => { Object.assign(g, defF()); draw2(); },
         apply: () => { readAges(); f = g; saveF(f); close(); load(); },
       });

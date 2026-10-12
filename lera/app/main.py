@@ -35,11 +35,14 @@ async def lifespan(_app):
     from .v8 import init as v8_init, loop as v8_loop
     await v8_init()
     task8 = asyncio.create_task(v8_loop())
+    from .v9 import loop as v9_loop
+    task9 = asyncio.create_task(v9_loop())
     yield
     task.cancel()
     task5.cancel()
     task6.cancel()
     task8.cancel()
+    task9.cancel()
     await db.close()
 
 
@@ -146,7 +149,7 @@ async def bump_quest(tg_id: int, quest_id: str, n: int = 1):
 
 PCOLS = ("p.nickname, p.age, p.city, p.gender, p.about, p.rank, p.roles, p.heroes, p.play_times, "
          "p.voice, p.photos, p.accent, p.duet_visible")
-UCOLS = "u.tg_id, u.username, u.first_name, u.photo_url, u.premium_until, u.last_seen, u.xp, u.streak"
+UCOLS = "u.tg_id, u.username, u.first_name, u.photo_url, u.premium_until, u.last_seen, u.xp, u.streak, u.mentor"
 
 
 async def cosmetics(ids: list[int]) -> dict[int, dict]:
@@ -191,6 +194,7 @@ def card(r: dict, cos: dict | None = None, games: list | None = None, rep: dict 
         "level": level_of(r.get("xp") or 0)["level"],
         "frame": cos.get("frame"), "color": cos.get("color"), "banner": cos.get("banner"),
         "title": C.ITEMS[title][0] if title in C.ITEMS else None,
+        "mentor": bool(r.get("mentor")), "reliability": rep.get("reliability"), "verified": bool(g and g.get("verified")),
     }
 
 
@@ -202,7 +206,8 @@ async def user_games(ids: list[int]) -> dict[int, list]:
     for r in await db.all_(f"SELECT * FROM user_games WHERE tg_id IN ({q}) ORDER BY pos, rowid", *ids):
         if r["game"] in C.GAMES:
             out.setdefault(r["tg_id"], []).append({"game": r["game"], "rank": r["rank"], "roles": jl(r["roles"]),
-                                                   "heroes": jl(r["heroes"]), "uid": r["game_uid"]})
+                                                   "heroes": jl(r["heroes"]), "uid": r["game_uid"],
+                                                   "verified": bool(r.get("verified"))})
     return out
 
 
@@ -212,11 +217,14 @@ async def reputation(ids: list[int]) -> dict[int, dict]:
     q = ",".join("?" * len(ids))
     out: dict[int, dict] = {}
     for r in await db.all_(f"SELECT to_id, thumb, tags FROM reviews WHERE to_id IN ({q})", *ids):
-        d = out.setdefault(r["to_id"], {"score": 0, "cnt": {}})
+        d = out.setdefault(r["to_id"], {"score": 0, "cnt": {}, "n": 0})
         d["score"] += r["thumb"]
+        d["n"] += 1
         for t in jl(r["tags"]):
             d["cnt"][t] = d["cnt"].get(t, 0) + 1
     for d in out.values():
+        # надёжность: доля отзывов без «не пришёл»; показываем с трёх отзывов
+        d["reliability"] = round(100 * (1 - d["cnt"].get("noshow", 0) / d["n"])) if d["n"] >= 3 else None
         d["tags"] = [t for t, _ in sorted(d.pop("cnt").items(), key=lambda x: -x[1])
                      if t in C.REVIEW_TAGS and t not in C.NEGATIVE_TAGS][:3]
     return out
@@ -321,7 +329,7 @@ async def bootstrap(me=Me):
             "premium_until": me["premium_until"] if is_premium(me) else None,
             "is_admin": me["is_admin"], "duet_visible": bool(prof.get("duet_visible", 1)),
             "profile_done": bool(prof.get("nickname") and person["games"]),
-            "mute_ready": bool(me.get("mute_ready")),
+            "mute_ready": bool(me.get("mute_ready")), "mentor": bool(me.get("mentor")),
         },
         "unread": await unread_counts(uid),
         "dict": {
@@ -469,13 +477,15 @@ def vibe(me: dict, o: dict) -> tuple[int, list[str]]:
 
 @app.get("/api/duet/feed")
 async def duet_feed(game: str = C.DEFAULT_GAME, gender: str = "", age_min: int = 14, age_max: int = 80,
-                    rank_min: int = 0, rank_max: int = 99, role: str = "", online: int = 0, me=Me):
+                    rank_min: int = 0, rank_max: int = 99, role: str = "", online: int = 0,
+                    verified: int = 0, mentor: int = 0, reliable: int = 0, me=Me):
     uid = me["tg_id"]
     if game not in C.GAMES:
         game = C.DEFAULT_GAME
     rows = await db.all_(
         f"SELECT {UCOLS}, {PCOLS} FROM profiles p JOIN users u ON u.tg_id=p.tg_id "
         "WHERE p.duet_visible=1 AND p.tg_id != ? AND p.tg_id != 0 AND p.nickname IS NOT NULL AND u.banned=0 "
+        "AND u.last_seen > datetime('now','-21 days') "   # мёртвые анкеты не показываем
         "AND EXISTS (SELECT 1 FROM user_games ug WHERE ug.tg_id=p.tg_id AND ug.game=?) "
         "AND NOT EXISTS (SELECT 1 FROM swipes s WHERE s.from_id=? AND s.to_id=p.tg_id) "
         "AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.from_id=? AND b.to_id=p.tg_id) OR (b.from_id=p.tg_id AND b.to_id=?)) "
@@ -497,6 +507,12 @@ async def duet_feed(game: str = C.DEFAULT_GAME, gender: str = "", age_min: int =
         if role and role not in c["roles"]:
             continue
         if online and not c["online"]:
+            continue
+        if verified and not c["verified"]:
+            continue
+        if mentor and not c["mentor"]:
+            continue
+        if reliable and c["reliability"] is not None and c["reliability"] < 80:
             continue
         c["vibe"], c["vibe_why"] = vibe(mine, c)
         c["super_liked_me"] = liked_me.get(c["tg_id"]) == "super"
@@ -610,7 +626,7 @@ async def chats(me=Me):
         "AND NOT EXISTS (SELECT 1 FROM blocks b WHERE (b.from_id=m.u1 AND b.to_id=m.u2) OR (b.from_id=m.u2 AND b.to_id=m.u1))",
         uid, uid, uid, uid)
     ppl = await people([m["u2"] if m["u1"] == uid else m["u1"] for m in ms])
-    out = [{"id": m["id"], "with": ppl.get(m["u2"] if m["u1"] == uid else m["u1"]), "last_text": m["last_text"],
+    out = [{"id": m["id"], "with": ppl.get(m["u2"] if m["u1"] == uid else m["u1"]), "last_text": (m["last_text"] or "").split("\u2063")[0] or None,
             "mine": m["last_sender"] == uid, "at": m["last_at"] or m["created_at"], "unread": m["unread"]}
            for m in ms]
     out.sort(key=lambda x: x["at"], reverse=True)
@@ -659,7 +675,8 @@ async def chat_send(mid: int, body: MsgIn, me=Me):
     other = await db.one("SELECT last_seen FROM users WHERE tg_id=?", m["other"])
     if first or not is_online(other or {}):
         name = _h((await people([me["tg_id"]]))[me["tg_id"]]["name"])
-        notify.send(m["other"], f"💬 <b>{name}</b>: {_h(text[:120])}", f"m{mid}")
+        preview = text.split("\u2063")[0][:120]   # у голосовых после разделителя — путь к файлу
+        notify.send(m["other"], f"💬 <b>{name}</b>: {_h(preview)}", f"m{mid}")
     msg = await db.one("SELECT id, sender, text, created_at FROM match_messages WHERE id=?", msg_id)
     hub.push([m["other"], me["tg_id"]], {"type": "msg", "chat": f"m{mid}", "message": msg})
     return msg
@@ -697,6 +714,7 @@ class SquadIn(BaseModel):
     max_players: int = Field(5, ge=2, le=5)
     voice: bool = False
     hours: int = Field(2, ge=1, le=12)
+    start_at: str | None = None   # «собрать на время» (мск, YYYY-MM-DDTHH:MM)
 
 
 async def squad_view(sid: int, uid: int, with_members=True) -> dict:
@@ -742,11 +760,17 @@ async def create_squad(s: SquadIn, me=Me):
     active = await db.val("SELECT COUNT(*) FROM squads WHERE creator=? AND status='open' AND expires_at > datetime('now')", uid)
     if active >= 3:
         raise HTTPException(429, "У тебя уже 3 открытых отряда — закрой лишние")
+    start = None
+    if s.start_at:
+        from .v2 import msk_to_utc
+        start = parse_ts(msk_to_utc(s.start_at))
+        if not start or start < utcnow() - timedelta(minutes=5) or start > utcnow() + timedelta(days=7):
+            raise HTTPException(400, "Время сбора — в ближайшие 7 дней")
     sid = await db.run(
-        "INSERT INTO squads (creator, title, game, mode, rank, roles_needed, max_players, voice, expires_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?)", uid, s.title.strip(), s.game, s.mode, s.rank,
+        "INSERT INTO squads (creator, title, game, mode, rank, roles_needed, max_players, voice, expires_at, start_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)", uid, s.title.strip(), s.game, s.mode, s.rank,
         json.dumps([r for r in s.roles_needed if r in g["roles"]]), s.max_players, int(s.voice),
-        sqlts(utcnow() + timedelta(hours=s.hours)))
+        sqlts((start + timedelta(hours=2)) if start else utcnow() + timedelta(hours=s.hours)), sqlts(start) if start else None)
     await db.run("INSERT INTO squad_members (squad_id, tg_id) VALUES (?,?)", sid, uid)
     await add_xp(uid, 10)
     return await squad_view(sid, uid)
@@ -1228,6 +1252,10 @@ app.include_router(v7.router)
 from . import v8  # noqa: E402
 
 app.include_router(v8.router)
+
+from . import v9  # noqa: E402
+
+app.include_router(v9.router)
 
 
 # ── static ───────────────────────────────────────────────────────────────

@@ -61,6 +61,10 @@ export function editGame(game, { onSaved } = {}) {
         <div class="field"><span class="lbl">роли · до трёх</span><div class="chips">${Object.entries(g.roles).map(([k, v]) => html`<button class="chip ${st.roles.includes(k) ? "on" : ""}" data-act="role" data-v="${k}">${v}</button>`)}</div></div>
         ${g.heroes ? html`<div class="field"><span class="lbl">мейны · до пяти</span><div class="chips">${st.heroes.map((h) => html`<button class="chip on" data-act="rmh" data-v="${h}">${h} ×</button>`)}
           ${st.heroes.length < 5 ? html`<button class="chip" data-act="heroes">${icon("plus")}добавить</button>` : ""}</div></div>` : ""}
+        ${cur && cur.rank != null ? html`<div class="verify-box ${cur.verified ? "ok" : ""}">${cur.verified
+            ? html`<b class="vbadge">✓</b><span class="grow small">Ранг подтверждён. Если поменяешь ранг — галочка снимется.</span>`
+            : html`<span class="grow small">Подтверди ранг скрином профиля — получишь ✓ в анкете и +50 несо. Анкеты с ✓ выше в фильтрах.</span>
+              <button class="btn sm" data-act="verify">скрин</button>`}</div>` : ""}
         <div class="field"><label>игровой ID / ник (необязательно)</label><input class="input" id="guid" maxlength="40" value="${st.uid}" placeholder="Чтобы тебя могли добавить в друзья"></div>
         <div class="row">${cur ? html`<button class="btn ghost" data-act="del">${icon("trash")}</button>` : ""}
           <button class="btn grow" data-act="save">${icon("check")}${cur ? "сохранить" : "добавить игру"}</button></div>`);
@@ -74,6 +78,19 @@ export function editGame(game, { onSaved } = {}) {
         else if (st.roles.length >= 3) return toast("Максимум 3 роли", "err");
         else st.roles.push(v);
         haptic.sel(); draw();
+      },
+      verify: () => {
+        const inp = Object.assign(document.createElement("input"), { type: "file", accept: "image/*" });
+        inp.onchange = async () => {
+          if (!inp.files[0]) return;
+          try {
+            const { uploadImage } = await import("./pages/feed.js");
+            const url = await uploadImage(inp.files[0]);
+            await api("/api/verify", { method: "POST", body: { game, image: url } });
+            haptic.ok(); toast("Скрин отправлен — админ проверит и поставит ✓", "ok");
+          } catch (e) { fail(e); }
+        };
+        inp.click();
       },
       rmh: (b) => { st.heroes = st.heroes.filter((h) => h !== b.dataset.v); draw(); },
       heroes: async () => {
