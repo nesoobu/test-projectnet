@@ -1,6 +1,7 @@
 # Соня — передача проекта в новый чат
 
-Прочти это целиком. В архиве: `sonya/` — актуальный код (= волна 58), `tests/` — тесты, `sonya_promo_kit.md` — продвижение.
+Прочти это целиком. Полный код + тесты — в `sonya_FULL_wave58.zip` (внутри: `sonya/` = волна 58, `tests/`). Модель для вырезания фона — отдельно `sonya_u2net_model.zip` (кладётся в `data/models/`, в основной zip не входит — это `data/`). `sonya_promo_kit.md` — продвижение.
+Следующая правка — отдельный `sonya_wave59_*.zip` (НЕ перезаписывать полный архив).
 
 ## Кто я и как работаем
 - Тим, ИП, делаю Telegram-ботов. Работаю **только с телефона через Termius**, команды выполняю по шагам.
@@ -109,11 +110,16 @@ Config использует `setdefault` — переменные systemd пер
 - «Кто задал вопрос» в анонимках за деньги — НЕ делать (деанон). Конкуренты на этом теряют доверие.
 - ВПН — решили НЕ делать (закон о рекламе VPN, риск для Сони). Казино на звёздах — не делать.
 
+## Сервер — что доустановлено (волны 51–58)
+- **Умный фон стикеров (волна 51/53):** `pip install onnxruntime` + файл `data/models/u2netp.onnx` (из `sonya_u2net_model.zip` или `curl -L .../v0.0.0/u2netp.onnx`). Без них стикеры работают, фон режется по-простому.
+- **YouTube (волна 54):** нужен `deno` в PATH (`/usr/local/bin`) + `yt-dlp[default]` (ставит yt-dlp-ejs). Без deno YouTube = 403. Проверка в админке «🗂 Сервер» → строка 🦕 deno.
+- **Соня-ассистент (волна 58):** business-апдейты включаются сами (aiogram resolve_used_update_types по зарегистрированным хендлерам). Работает только в профиле full. Нужен Telegram Premium у того, кто подключает бота.
+
 ## Открыто / идеи
-- Волна 44 — Тим ставит. Нужны 2 токена от BotFather (grp, stk), у grp выключить privacy (/setprivacy → Disable).
-- Свой Bot API — ждёт api_id с другого номера.
+- Свой Bot API — ждёт api_id с другого номера (my.telegram.org даёт ERROR). Долбилку НЕ делать.
 - Fragment-юзернейм без «bot» — на будущее; пока канал-витрина.
-- Свой Bot API (BOT_API_URL) для файлов до 2 ГБ — по желанию.
+- Трафик важнее функций: у скачивалки за неделю было 2 скачивания. Следующий фокус — продвижение (посты, витрины ботов), не новые кнопки.
+- Идеи на потом (анонимки): «🦊 Лис · N сообщений», строка «все сообщения от живых людей».
 
 ## Тесты
 `tests/harness.py` — мок-сессия aiogram (SENT, ADMINS, LEFT, DICE), `setup()` собирает диспетчер как main.
@@ -127,9 +133,16 @@ python test_w43.py ../sonya
 BOT_PROFILE=grp python test_w44.py ../sonya grp   # и full / dl / stk
 BOT_PROFILE=games python test_w45.py ../sonya games   # и grp / stk / anon
 BOT_PROFILE=anon python test_w46.py ../sonya
+python test_w51.py ../sonya stk   # богатый стикер-бот
+python test_w52.py ../sonya stk   # мастер пака, инструменты, соавторы
+python test_w55.py ../sonya dl    # карточка длинного видео
+python test_w56.py ../sonya gw    # розыгрыши: барабан, проверка честности
+python test_w57.py ../sonya full  # обратная связь (и stk/anon/dl/games)
+python test_w58.py ../sonya full  # Соня-ассистент (Telegram Business)
 python smoke.py ../sonya          # и с BOT_PROFILE=dl/music/gw/games/anon/grp/stk
 ```
 Первый аргумент — путь к коду. Регрессия — все `test_*.py` подряд.
+test_fix19 проверяет число команд в меню: личка 21, владелец 25 (меняется при правке PRIVATE/OWNER в main.py).
 
 ## Грабли, на которые уже наступали
 - Путь установки — `/home/sonya/sonya`, не `/home/sonya`.
