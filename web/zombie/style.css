@@ -158,6 +158,8 @@ h2 { font: 34px/1.1 var(--display); color: #e2685a; text-wrap: balance; }
 .best { color: var(--muted); }
 .best b { color: var(--ink); }
 .record { font: 18px var(--display); color: var(--amber); }
+.credits { margin-top: 8px; font-size: 11px; color: var(--muted); opacity: 0.7; }
+.btn:disabled { opacity: 0.6; }
 
 .stats { display: flex; gap: 28px; margin: 6px 0; }
 .stats div { display: flex; flex-direction: column-reverse; gap: 2px; }

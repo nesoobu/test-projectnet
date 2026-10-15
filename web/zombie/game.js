@@ -14,8 +14,6 @@
   const BG = '#15181a';
   Z.JOY_R = 56;
 
-  const SKINS = ['#8f9c78', '#9aa58a', '#7f8c6b', '#a3a38a'];
-  const CLOTHES = ['#5c6b73', '#6e5050', '#5d5e43', '#4b5b4b', '#7a6c5c', '#3f4a5c', '#6a4f68'];
   const pick = (a) => a[Math.floor(Math.random() * a.length)];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
@@ -34,7 +32,7 @@
 
   const S = Z.S = {
     state: 'menu', paused: false,
-    p: null, zombies: [], corpses: [], decals: [], fx: [], inv: [],
+    p: null, zombies: [], corpses: [], decals: [], fx: [], parts: [], inv: [], shake: 0, flashlight: false, coneLen: 8,
     time: START_MIN, kills: 0, dark: 0, sight: 10, lightR: 12, hurtFlash: 0,
     near: null, open: null, cause: '', spawnT: 0, flowT: 0, dayShown: 1,
     best: { min: 0, kills: 0 },
@@ -45,7 +43,6 @@
 
   // ---------- Вспомогательное ----------
   const weaponDef = () => (S.p.weapon ? ITEMS[S.p.weapon.id] : ITEMS.fists);
-  S.weaponLook = () => weaponDef().look || null;
   S.gunEquipped = () => weaponDef().type === 'gun';
   const findItem = (id) => S.inv.find((e) => e.id === id);
   const dayNum = () => Math.floor(S.time / 1440) + 1;
@@ -78,8 +75,9 @@
       x, y, zombie: true, hp: 8 + Math.random() * 5, speed: 0.85 + Math.random() * 0.55,
       face: Math.random() * Math.PI * 2, state: 'wander', tx: x, ty: y, moving: false,
       think: Math.random() * 0.3, atkCd: 0, stun: 0, wanderT: Math.random() * 3, lost: 0,
-      sees: false, vis: false, alpha: 0, d: 99, walkT: Math.random() * 10,
-      skin: pick(SKINS), cloth: pick(CLOTHES),
+      sees: false, vis: false, alpha: 0, d: 99, walkT: Math.random() * 10, moving: false,
+      variant: Math.floor(Math.random() * Z.ZOMBIE_VARIANTS), scale: 0.92 + Math.random() * 0.16,
+      seed: Math.random(), flash: 0, atkAnim: 0,
     };
   }
 
@@ -109,9 +107,22 @@
 
   function blood(x, y, n, size) {
     for (let k = 0; k < n; k++) {
-      S.decals.push({ x: x + (Math.random() - 0.5) * 0.6, y: y + (Math.random() - 0.5) * 0.6, r: (0.05 + Math.random() * 0.1) * (size || 1), a: 0.85 });
+      S.decals.push({
+        x: x + (Math.random() - 0.5) * 0.5, y: y + (Math.random() - 0.5) * 0.5,
+        r: (0.14 + Math.random() * 0.14) * (size || 1), a: 0.75 + Math.random() * 0.2,
+        v: Math.floor(Math.random() * 6), rot: Math.random() * Math.PI * 2,
+      });
     }
-    if (S.decals.length > 300) S.decals.splice(0, S.decals.length - 300);
+    if (S.decals.length > 220) S.decals.splice(0, S.decals.length - 220);
+  }
+
+  // брызги крови разлетаются от удара
+  function spray(x, y, angle, n) {
+    for (let k = 0; k < n; k++) {
+      const a = angle + (Math.random() - 0.5) * 1.4, v = 2 + Math.random() * 4;
+      S.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: 0.25 + Math.random() * 0.3, size: 0.03 + Math.random() * 0.04 });
+    }
+    if (S.parts.length > 200) S.parts.splice(0, S.parts.length - 200);
   }
 
   // ---------- Новая игра ----------
@@ -121,11 +132,11 @@
     const sp = Z.world.spawn;
     S.p = {
       x: sp.x, y: sp.y, face: 0, hp: 100, hunger: 85, thirst: 80, stamina: 100, exhausted: false,
-      bleeding: false, weapon: null, atkCd: 0, atkAnim: 0, walkT: 0, stepT: 0,
+      bleeding: false, weapon: null, atkCd: 0, atkAnim: 0, walkT: 0, stepT: 0, moving: false, running: false,
     };
-    S.zombies = []; S.corpses = []; S.decals = []; S.fx = [];
+    S.zombies = []; S.corpses = []; S.decals = []; S.fx = []; S.parts = []; S.shake = 0;
     S.inv = [{ id: 'water', n: 1 }];
-    S.time = START_MIN; S.kills = 0; S.hurtFlash = 0; S.cause = ''; S.dayShown = 1;
+    S.time = START_MIN; S.kills = 0; S.hurtFlash = 0; S.cause = ''; S.dayShown = 1; S.lastBite = -1e9;
     S.spawnT = 20; S.open = null; S.near = null;
     for (let k = 0; k < 55; k++) spawnZombie(14, true);
     for (let k = 0; k < 20; k++) spawnZombie(14, false);
@@ -158,12 +169,14 @@
 
     run = run && m > 0.2 && !p.exhausted;
     j.run = run;
+    p.moving = m > 0.1;
+    p.running = run;
     if (m > 0.1) {
       const speed = (run ? RUN : WALK * Math.min(1, m * 1.4)) * (p.hp < 25 ? 0.8 : 1);
       p.x += (mx / m) * speed * dt;
       p.y += (my / m) * speed * dt;
       if (p.atkAnim <= 0) p.face = Math.atan2(my, mx);
-      p.walkT += dt * speed * 2.6;
+      p.walkT += dt * speed * 2.4;
       p.stepT -= dt;
       if (p.stepT <= 0) { p.stepT = run ? 0.4 : 0.7; noise(p.x, p.y, run ? 7 : 2.5); }
     }
@@ -214,6 +227,7 @@
       p.atkAnim = 0.12;
       Sfx.shot();
       Platform.haptic('heavy');
+      S.shake = Math.max(S.shake, 5);
       noise(p.x, p.y, w.noise);
       const fx = p.x + Math.cos(p.face) * 0.5, fy = p.y + Math.sin(p.face) * 0.5;
       const ex = target ? target.x : p.x + Math.cos(p.face) * w.range;
@@ -226,7 +240,7 @@
 
     const tired = p.stamina < 8;
     p.atkCd = w.cd * (tired ? 1.6 : 1);
-    p.atkAnim = 0.25;
+    p.atkAnim = 0.3;
     p.stamina = Math.max(0, p.stamina - 7);
     Sfx.swing();
     noise(p.x, p.y, w.noise);
@@ -242,6 +256,7 @@
     if (hits) {
       Sfx.hit();
       Platform.haptic('medium');
+      S.shake = Math.max(S.shake, 4);
       if (p.weapon && --p.weapon.dur <= 0) {
         toast(`${ITEMS[p.weapon.id].name} — сломано`);
         S.inv.splice(S.inv.indexOf(p.weapon), 1);
@@ -260,13 +275,17 @@
     z.stun = 0.35 + knock * 0.4;
     z.state = 'chase';
     z.lost = 0;
-    blood(z.x, z.y, crit ? 4 : 2);
+    z.flash = 0.15;
+    z.atkAnim = 0;
+    blood(z.x, z.y, crit ? 2 : 1);
+    spray(z.x, z.y, a, crit ? 14 : 8);
     if (z.hp <= 0) {
       z.dead = true;
       S.kills++;
-      S.corpses.push({ x: z.x, y: z.y, face: a, skin: z.skin, cloth: z.cloth, dead: true, blood: Math.random() * 3 });
+      blood(z.x, z.y, 2, 2.2);
+      S.corpses.push({ x: z.x, y: z.y, face: a + (Math.random() - 0.5) * 0.8, variant: z.variant, scale: z.scale });
       if (S.corpses.length > 80) S.corpses.shift();
-      blood(z.x, z.y, 5, 1.6);
+      S.shake = Math.max(S.shake, 7);
     }
   }
 
@@ -274,8 +293,10 @@
     const p = S.p;
     if (Math.random() < 0.25) return; // промахнулся
     p.hp -= 7 + Math.random() * 7;
-    S.cause = 'zombie';
+    S.lastBite = S.time;
     S.hurtFlash = 1;
+    S.shake = Math.max(S.shake, 9);
+    spray(p.x, p.y, Math.atan2(p.y - z.y, p.x - z.x), 6);
     Sfx.hurt();
     Platform.haptic('heavy');
     blood(p.x, p.y, 2);
@@ -310,6 +331,9 @@
       }
       z.alpha += ((z.vis ? 1 : 0) - z.alpha) * Math.min(1, dt * 6);
       z.atkCd -= dt;
+      z.flash = Math.max(0, z.flash - dt);
+      z.atkAnim = Math.max(0, z.atkAnim - dt);
+      z.moving = false;
       if (z.stun > 0) { z.stun -= dt; continue; }
 
       let gx = null, gy = null, spd = 0;
@@ -350,8 +374,9 @@
         z.x += Math.cos(z.face) * spd * dt;
         z.y += Math.sin(z.face) * spd * dt;
         z.walkT += dt * spd * 3;
+        z.moving = spd > 0;
       }
-      if (alive && d < Z_R + P_R + 0.25 && z.atkCd <= 0) { z.atkCd = 1.4; zombieAttack(z); }
+      if (alive && d < Z_R + P_R + 0.25 && z.atkCd <= 0) { z.atkCd = 1.4; z.atkAnim = 0.55; zombieAttack(z); }
     }
 
     // расталкиваем зомби между собой и от игрока
@@ -403,6 +428,7 @@
       S.best = { min: survived, kills: S.kills };
       Platform.setItem('zb_best', JSON.stringify(S.best));
     }
+    if (S.time - S.lastBite < 15) S.cause = 'zombie'; // укус в последние минуты — значит, сожрали
     const titles = { zombie: 'Тебя сожрали', hunger: 'Ты умер от голода', thirst: 'Ты умер от жажды', blood: 'Ты истёк кровью' };
     setTimeout(() => {
       ui.hud.classList.add('hidden');
@@ -577,11 +603,15 @@
       const h = (S.time % 1440) / 60;
       S.dark = darkness(h);
       const lamp = !!findItem('flashlight');
+      S.flashlight = lamp && S.dark > 0.05;
       S.sight = 11 - (S.dark / 0.9) * (lamp ? 4 : 6.5);
-      S.lightR = 13 - (S.dark / 0.9) * (lamp ? 6.5 : 9);
+      S.lightR = 13 - (S.dark / 0.9) * (lamp ? 10 : 9.5);
       updateZombies(dt);
       for (const f of S.fx) f.t += dt;
       S.fx = S.fx.filter((f) => f.t < f.life);
+      for (const q of S.parts) { q.t += dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.9; q.vy *= 0.9; }
+      S.parts = S.parts.filter((q) => q.t < q.life);
+      S.shake = Math.max(0, S.shake - dt * 45);
       S.hurtFlash = Math.max(0, S.hurtFlash - dt * 2);
       for (const b of Z.world.buildings) {
         const inside = S.p.x > b.x + 0.5 && S.p.x < b.x + b.w - 0.5 && S.p.y > b.y + 0.5 && S.p.y < b.y + b.h - 0.5;
@@ -648,7 +678,7 @@
 
   window.addEventListener('keydown', (e) => {
     keys[e.code] = true;
-    if (S.state === 'menu' && e.code === 'Enter') return start();
+    if (S.state === 'menu' && e.code === 'Enter') return Z.A.ready && start();
     if (S.state !== 'play') return;
     if (e.code === 'Space' || e.code === 'Tab') e.preventDefault();
     if (e.code === 'Escape' && S.paused) closePanel();
@@ -658,7 +688,7 @@
   window.addEventListener('keyup', (e) => { keys[e.code] = false; });
   window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; attackHeld = false; });
 
-  $('play').addEventListener('click', start);
+  $('play').addEventListener('click', () => { if (Z.A.ready) start(); });
   $('again').addEventListener('click', start);
   $('share').addEventListener('click', () => {
     Platform.share(`Я продержался ${fmtSurvived(S.best.min)} в «Карантине» и убил ${S.best.kills} зомби. А ты?`);
@@ -678,7 +708,17 @@
   });
   Platform.getItem('zb_muted').then((v) => { Sfx.muted = v === '1'; ui.sound.textContent = Sfx.muted ? '🔇' : '🔊'; });
 
-  // фон меню: живой город за полупрозрачной заставкой
-  newGame();
+  // фон меню: живой город за полупрозрачной заставкой — после загрузки спрайтов
+  const playBtn = $('play');
+  playBtn.disabled = true;
+  playBtn.textContent = 'Загрузка…';
+  Z.loadAssets().then(() => {
+    newGame();
+    playBtn.disabled = false;
+    playBtn.textContent = 'Начать';
+  }, (err) => {
+    playBtn.textContent = 'Ошибка загрузки';
+    console.error(err);
+  });
   requestAnimationFrame(frame);
 })();

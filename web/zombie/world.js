@@ -8,7 +8,7 @@
   const ROADS = [3, 27, 51, 75];          // верхний ряд каждой дороги (ширина 3)
   const D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   const ROOFS = ['#6b3b32', '#5a4a3f', '#4f5a63', '#6e5a3a', '#5d3f4a', '#4a5546'];
-  const CARS = ['#7a2e2a', '#2e4a6b', '#c9c3b4', '#3d4a3a', '#6b5a2e', '#2b2d30'];
+  const CARS = ['car01', 'car02', 'car03', 'pickupTruck01', 'pickupTruck02'];
 
   function rng(seed) { // mulberry32
     return function () {
@@ -28,10 +28,11 @@
     const tiles = new Uint8Array(N * N);
     const deco = new Uint8Array(N * N);      // случайная вариация для отрисовки
     const mark = new Uint8Array(N * N);      // разметка: 1 — горизонтальная, 2 — вертикальная
-    const floor = new Uint8Array(N * N);     // пол: 0 доски, 1 плитка, 2 линолеум
+    const floor = new Uint8Array(N * N);     // пол: 0–3 доски (разные), 4 плитка, 5 линолеум
     const contAt = new Int16Array(N * N).fill(-1);
     const containers = [];
     const buildings = [];
+    const decor = [];      // мебель для красоты: диваны, столы, ковры (не обыскивается)
 
     const idx = (x, y) => y * N + x;
     const inside = (x, y) => x >= 0 && y >= 0 && x < N && y < N;
@@ -60,8 +61,9 @@
     }
 
     function addContainer(type, x, y, w, h) {
-      const c = { type, x, y, w, h, items: null };
-      if (type === 'car') c.color = pick(CARS);
+      const c = { type, x, y, w, h, items: null, rot: 0 };
+      if (type === 'car') c.model = R() < 0.12 ? 'policeCar' : pick(CARS);
+      if (type === 'cupboard') c.sprite = pick(['counter', 'counter', 'sink']);
       for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) {
         set(i, j, T.FURN);
         contAt[idx(i, j)] = containers.length;
@@ -150,7 +152,7 @@
     }
 
     function house(x, y, w, h, sides) {
-      const b = building(x, y, w, h, 'house', 0);
+      const b = building(x, y, w, h, 'house', ri(0, 3));
       if (w >= 8 && R() < 0.8) {
         const wx = x + ri(3, w - 4);
         for (let j = y + 1; j < y + h - 1; j++) set(wx, j, T.WALL);
@@ -164,7 +166,54 @@
       if (!b.doors.length) door(b, sides[0], 1);
       const extra = shuffle(['wardrobe', 'cupboard', R() < 0.5 ? 'toolbox' : 'wardrobe']);
       furnish(b, ['fridge', 'cupboard'].concat(extra.slice(0, ri(0, 2))));
+      if (R() < 0.7) placeDecor(b, R() < 0.5 ? ['sofa_l', 'sofa_m', 'sofa_r'] : ['sofa2_l', 'sofa2_m', 'sofa2_r'], 'wall', true);
+      if (R() < 0.5) placeDecor(b, ['stove'], 'wall', true);
+      if (R() < 0.4) placeDecor(b, ['tv'], 'wall', true);
+      if (R() < 0.4) placeDecor(b, [pick(['armchair', 'armchair2'])], 'wall', true);
+      if (R() < 0.6) placeDecor(b, ['plant'], 'wall', true);
+      if (R() < 0.5) placeDecor(b, ['table_round'], 'open', true);
+      if (R() < 0.5) placeDecor(b, ['rug_l', 'rug_m', 'rug_r'], 'open', false);
       return b;
+    }
+
+    // куда «спиной» стоит предмет у стены (спинка спрайта смотрит вверх)
+    function wallRot(i, j) {
+      if (get(i, j - 1) === T.WALL) return 0;
+      if (get(i + 1, j) === T.WALL) return Math.PI / 2;
+      if (get(i, j + 1) === T.WALL) return Math.PI;
+      if (get(i - 1, j) === T.WALL) return -Math.PI / 2;
+      return 0;
+    }
+
+    // декор длиной parts.length клеток (по горизонтали). where: 'wall' — у верхней/нижней стены, 'open' — посреди комнаты
+    function placeDecor(b, parts, where, solid) {
+      const w = parts.length;
+      const cand = [];
+      for (let j = b.y + 1; j < b.y + b.h - 1; j++) for (let i = b.x + 1; i + w <= b.x + b.w - 1; i++) {
+        let ok = true, top = true, bottom = true, open = true;
+        for (let k = 0; k < w && ok; k++) {
+          const x = i + k;
+          if (get(x, j) !== T.FLOOR || decor.some((d) => d.solid !== false && x >= d.x && x < d.x + d.w && j === d.y)) ok = false;
+          for (const [dx, dy] of D4) if (get(x + dx, j + dy) === T.DOOR) ok = false;
+          if (get(x, j - 1) !== T.WALL) top = false;
+          if (get(x, j + 1) !== T.WALL) bottom = false;
+          for (const [dx, dy] of D4) if (get(x + dx, j + dy) === T.WALL || get(x + dx, j + dy) === T.FURN) open = false;
+        }
+        if (!ok) continue;
+        if (where === 'wall' && w === 1) { const r = wallRot(i, j); if (get(i, j - 1) === T.WALL || get(i + 1, j) === T.WALL || get(i, j + 1) === T.WALL || get(i - 1, j) === T.WALL) cand.push([i, j, r]); }
+        else if (where === 'wall') { if (top) cand.push([i, j, 0]); else if (bottom) cand.push([i, j, Math.PI]); }
+        else if (open || !solid) cand.push([i, j, 0]);
+      }
+      shuffle(cand);
+      for (const [i, j, rot] of cand) {
+        if (solid) {
+          for (let k = 0; k < w; k++) set(i + k, j, T.FURN);
+          if (!connected(b)) { for (let k = 0; k < w; k++) set(i + k, j, T.FLOOR); continue; }
+        }
+        decor.push({ parts, x: i, y: j, w, h: 1, rot, solid });
+        return true;
+      }
+      return false;
     }
 
     // ---- кварталы ----
@@ -189,7 +238,7 @@
         }
       } else if (kinds[k] === 'store') {
         const w = S - 2, h = ri(12, 15);
-        const b = building(bl.x0 + 1, bl.y0 + ri(1, S - h - 1), w, h, 'store', 1);
+        const b = building(bl.x0 + 1, bl.y0 + ri(1, S - h - 1), w, h, 'store', 4);
         b.name = 'МАГАЗИН';
         b.roof = '#55595c';
         for (let j = b.y + 3; j <= b.y + h - 4; j += 3) {
@@ -199,7 +248,7 @@
         door(b, R() < 0.5 ? 0 : 2, 2);
       } else if (kinds[k] === 'police') {
         const w = ri(13, 15), h = ri(10, 12);
-        const b = building(bl.x0 + ri(1, S - w - 1), bl.y0 + ri(1, S - h - 1), w, h, 'police', 2);
+        const b = building(bl.x0 + ri(1, S - w - 1), bl.y0 + ri(1, S - h - 1), w, h, 'police', 5);
         b.name = 'ПОЛИЦИЯ';
         b.roof = '#3f4650';
         const wx = b.x + Math.floor(w / 2);
@@ -207,6 +256,7 @@
         set(wx, b.y + ri(2, h - 3), T.DOOR);
         door(b, R() < 0.5 ? 0 : 2, 2);
         furnish(b, ['locker', 'locker', 'locker', 'desk', 'desk', 'desk', 'locker']);
+        placeDecor(b, ['plant'], 'wall', true);
       } else { // парк
         for (let j = bl.y0; j < bl.y0 + S; j++) for (let i = bl.x0; i < bl.x0 + S; i++) {
           if (R() < 0.18) set(i, j, T.TREE);
@@ -238,6 +288,8 @@
       }
     }
 
+    for (const c of containers) if (c.w === 1 && c.h === 1) c.rot = wallRot(c.x, c.y);
+
     // старт — в случайном доме, на свободной клетке ближе к центру
     const homes = buildings.filter((b) => b.kind === 'house');
     const home = pick(homes);
@@ -248,7 +300,7 @@
       if (d < bestD) { bestD = d; spawn = { x: i + 0.5, y: j + 0.5 }; }
     }
 
-    return { tiles, deco, mark, floor, contAt, containers, buildings, spawn, home };
+    return { tiles, deco, mark, floor, contAt, containers, buildings, decor, spawn, home };
   };
 
   // ---------- Запросы к карте ----------
