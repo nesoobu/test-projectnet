@@ -2,41 +2,18 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#16182f">
-  <title>Башня</title>
-  <link rel="stylesheet" href="style.css">
-  <!-- SDK Telegram Mini Apps. Вне Telegram просто ничего не делает. -->
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Игры</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: grid; place-content: center; gap: 12px; padding: 24px 16px;
+           background: #15181a; color: #ece6d6; font: 16px system-ui, sans-serif; text-align: center; }
+    a { display: block; min-width: 240px; padding: 16px 24px; border-radius: 14px; background: #24282a;
+        color: inherit; text-decoration: none; font-weight: 700; font-size: 20px; }
+    small { display: block; font-weight: 400; font-size: 13px; opacity: .65; margin-top: 4px; }
+  </style>
 </head>
 <body>
-  <canvas id="game"></canvas>
-
-  <div id="hud" class="hidden">
-    <div id="score">0</div>
-    <div id="combo"></div>
-  </div>
-
-  <button id="sound" class="icon-btn" aria-label="Звук">🔊</button>
-
-  <div id="menu" class="screen">
-    <h1>Башня</h1>
-    <p class="hint">Нажимай, чтобы ставить блоки.<br>Точное попадание — бонус!</p>
-    <p class="best">Рекорд: <b id="menu-best">0</b></p>
-    <button id="play" class="btn">Играть</button>
-  </div>
-
-  <div id="over" class="screen hidden">
-    <h2>Башня рухнула</h2>
-    <div class="final"><span id="final-score">0</span><small>блоков</small></div>
-    <p class="record hidden" id="new-record">Новый рекорд! 🎉</p>
-    <p class="best">Рекорд: <b id="over-best">0</b></p>
-    <button id="again" class="btn">Ещё раз</button>
-    <button id="share" class="btn btn-ghost">Поделиться</button>
-  </div>
-
-  <script src="config.js"></script>
-  <script src="platform.js"></script>
-  <script src="game.js"></script>
+  <a href="zombie/">🧟 Карантин<small>выживание в городе зомби</small></a>
+  <a href="tower/">🧱 Башня<small>аркада на точность</small></a>
 </body>
 </html>

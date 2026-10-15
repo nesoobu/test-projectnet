@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#15181a">
+  <title>Карантин</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap">
+  <link rel="stylesheet" href="style.css">
+  <!-- SDK Telegram Mini Apps. Вне Telegram просто ничего не делает. -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="status-card">
+      <div class="clock"><b id="day">День 1</b><span id="clock">08:00</span><span class="kills">💀 <b id="kills">0</b></span></div>
+      <div class="bars">
+        <div class="bar"><i>❤️</i><span><em id="b-hp" class="hp"></em></span></div>
+        <div class="bar"><i>🍗</i><span><em id="b-hunger" class="hunger"></em></span></div>
+        <div class="bar"><i>💧</i><span><em id="b-thirst" class="thirst"></em></span></div>
+        <div class="bar"><i>⚡</i><span><em id="b-stamina" class="stamina"></em></span></div>
+      </div>
+      <div id="status"></div>
+    </div>
+    <div id="toast"></div>
+    <button id="btn-bag" class="act bag" aria-label="Рюкзак">🎒</button>
+    <button id="btn-search" class="act search hidden" aria-label="Обыскать">🔍</button>
+    <button id="btn-attack" class="act attack" aria-label="Удар">✊</button>
+  </div>
+
+  <button id="btn-sound" class="sound" aria-label="Звук">🔊</button>
+
+  <div id="menu" class="screen">
+    <h1>Карантин</h1>
+    <p class="tagline">Город закрыт. Помощи не будет.</p>
+    <p class="lead">Обыскивай дома, ищи еду, воду и оружие.<br>Не шуми: мертвецы идут на звук. Ночью — особенно.</p>
+    <p class="hint" id="controls-hint"></p>
+    <p class="best">Рекорд: <b id="menu-best">—</b></p>
+    <button id="play" class="btn">Начать</button>
+  </div>
+
+  <div id="dead" class="screen hidden">
+    <h2 id="dead-title">Тебя сожрали</h2>
+    <dl class="stats">
+      <div><dt>Продержался</dt><dd id="dead-time">0 ч.</dd></div>
+      <div><dt>Убито зомби</dt><dd id="dead-kills">0</dd></div>
+    </dl>
+    <p class="record hidden" id="dead-record">Новый рекорд!</p>
+    <p class="best">Лучший результат: <b id="dead-best">—</b></p>
+    <button id="again" class="btn">Заново</button>
+    <button id="share" class="btn btn-ghost">Поделиться</button>
+  </div>
+
+  <div id="panel" class="sheet hidden">
+    <div class="sheet-in">
+      <div class="sheet-head"><span>Пауза</span><button id="panel-close" class="x" aria-label="Закрыть">✕</button></div>
+      <section id="loot-sec">
+        <div class="sec-head"><span id="loot-name"></span><button id="take-all" class="mini">Взять всё</button></div>
+        <ul id="loot-list" class="list"></ul>
+      </section>
+      <section>
+        <div class="sec-head"><span>Рюкзак <small id="inv-count"></small></span></div>
+        <ul id="inv-list" class="list"></ul>
+      </section>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="platform.js"></script>
+  <script src="items.js"></script>
+  <script src="world.js"></script>
+  <script src="sound.js"></script>
+  <script src="render.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
