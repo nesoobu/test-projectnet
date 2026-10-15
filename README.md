@@ -31,6 +31,33 @@ python3 -m http.server -d web 8080   # открыть http://localhost:8080
 | `render.js` | отрисовка |
 | `sound.js` | звуки (синтез WebAudio) |
 | `platform.js` | Telegram SDK: хаптика, CloudStorage, «поделиться» |
+| `assets/` | атласы спрайтов (собираются скриптом, см. ниже) |
+
+### Графика
+
+Персонажи и окружение — готовые наборы художников, игра их только собирает и анимирует:
+
+| Что | Набор | Лицензия |
+|---|---|---|
+| Выживший (ноги + тело, анимации) | Riley Gombart, «Animated Top Down Survivor Player» | CC BY 3.0 — нужно указывать автора (есть в меню) |
+| Зомби (ходьба, атака) | Riley Gombart, «Animated Top Down Zombie» | CC0 |
+| Тайлы, мебель, деревья | Kenney, «Topdown Shooter» | CC0 |
+| Кровь | Kenney, «Splat Pack» | CC0 |
+| Машины | DevilsWorkShop, «2D Car Pack» | CC0 |
+
+Атласы `web/zombie/assets/*` собирает `tools/build-assets.py` (Python 3 + Pillow + numpy): режет кадры,
+выравнивает их по туловищу, приглушает цвета под общий мрачный стиль и упаковывает в PNG-атласы.
+
+```bash
+python3 tools/build-assets.py \
+  --riley  <zombie_game_prototype>/asset_packs \
+  --kenney <kenney-topdown-shooter> --splats <kenney-splat-pack> \
+  --cars   <2d-car-pack>/City-Traffic-Vehicles
+```
+
+Исходники: Kenney и машины — зеркало [series-ai/jam-ready-assets](https://github.com/series-ai/jam-ready-assets)
+(или kenney.nl / opengameart.org), персонажи — [D4M13N-D3V/zombie_game_prototype](https://github.com/D4M13N-D3V/zombie_game_prototype)
+(или opengameart.org, автор rileygombart). Одежду зомби игра перекрашивает на лету — получается несколько видов зомби из одного набора.
 
 ## Публикация в Telegram
 
